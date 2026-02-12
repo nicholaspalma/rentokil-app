@@ -4,12 +4,13 @@ import matplotlib.pyplot as plt
 from fpdf import FPDF
 import datetime
 import os
+import tempfile  # <--- NUEVA HERRAMIENTA CLAVE
 
 # --- CONFIGURACIÓN VISUAL ---
-st.set_page_config(layout="wide", page_title="Rentokil Mobile") # Mejor ajuste para móviles
-COLOR_PRIMARIO = (227, 6, 19)      # Rojo Rentokil
-COLOR_TABLA_HEAD = (220, 220, 220) # Gris Claro
-COLOR_TABLA_FILA = (255, 255, 255) # Blanco
+st.set_page_config(layout="wide", page_title="Rentokil Mobile")
+COLOR_PRIMARIO = (227, 6, 19)
+COLOR_TABLA_HEAD = (220, 220, 220)
+COLOR_TABLA_FILA = (255, 255, 255)
 
 # --- BASE DE DATOS ---
 DATABASE_MOLINOS = {
@@ -25,8 +26,9 @@ LISTA_PLAGAS = ["Tribolium confusum", "Cryptolestes ferrugineus", "Gnathocerus c
 
 class PDF(FPDF):
     def header(self):
-        try: self.image('logo.png', 10, 8, 33)
-        except: pass
+        # Logo: Verificación robusta para la nube
+        if os.path.exists("logo.png"):
+            self.image('logo.png', 10, 8, 33)
         self.set_font("Arial", "B", 14)
         self.set_text_color(*COLOR_PRIMARIO)
         self.cell(0, 8, "INFORME TÉCNICO DE FUMIGACIÓN", ln=1, align="R")
@@ -56,7 +58,6 @@ class PDF(FPDF):
         for i, h in enumerate(header):
             self.cell(col_widths[i], 8, h, 1, 0, 'C', True)
         self.ln()
-        
         self.set_font("Arial", "", 7)
         for row in data:
             self.set_fill_color(*COLOR_TABLA_FILA)
@@ -64,7 +65,7 @@ class PDF(FPDF):
                 self.cell(col_widths[i], 6, str(d), 1, 0, 'C', True)
             self.ln()
 
-st.title("🛡️ Generador Rentokil v6.1")
+st.title("🛡️ Generador Rentokil v6.2 (Cloud)")
 
 # --- I. DATOS GENERALES ---
 st.subheader("I. Datos Generales")
@@ -93,15 +94,12 @@ with col_t2:
     f_ter = st.date_input("Fin Ventilación", datetime.date.today() + datetime.timedelta(days=3))
     h_ter = st.time_input("Hora Término", datetime.time(19, 0))
 
-# Cálculo tiempo
 dt_ini = datetime.datetime.combine(f_ini, h_ini)
 dt_ter = datetime.datetime.combine(f_ter, h_ter)
 horas_exp = (dt_ter - dt_ini).total_seconds() / 3600
 
-# --- III. DOSIFICACIÓN (CORREGIDO PARA MÓVIL) ---
+# --- III. DOSIFICACIÓN ---
 st.subheader("III. Distribución y Dosificación")
-
-# CORRECCIÓN DE ERROR "STICKY": Agregamos use_container_width=True
 df_dosis = st.data_editor(
     pd.DataFrame([
         {"Piso": "Subterráneo", "Bandejas": 10, "Mini-Ropes": 2},
@@ -112,10 +110,9 @@ df_dosis = st.data_editor(
         {"Piso": "Piso 5", "Bandejas": 5, "Mini-Ropes": 0},
     ], columns=["Piso", "Bandejas", "Mini-Ropes"]), 
     num_rows="dynamic",
-    use_container_width=True  # <--- ESTO ARREGLA EL ERROR EN IPHONE/ANDROID
+    use_container_width=True
 )
 
-# Totales
 total_bandejas = df_dosis["Bandejas"].sum()
 total_ropes = df_dosis["Mini-Ropes"].sum()
 gramos_totales = (total_bandejas * 500) + (total_ropes * 333)
@@ -123,11 +120,8 @@ dosis_final = gramos_totales / volumen_total if volumen_total > 0 else 0
 
 # --- IV. MEDICIONES ---
 st.subheader("IV. Mediciones de Gas (PPM)")
-st.caption("Ajusta los valores. Usa 'Agregar fila' para más horas.")
-
 cols_meds = ["Fecha", "Hora", "Hrs Exp", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "Piso 5"]
 
-# Generación de datos de ejemplo
 data_inicial = []
 horas_std = ["19:00", "00:00", "07:00", "13:00"]
 fecha_cursor = f_ini
@@ -137,17 +131,14 @@ for i in range(3):
     for h in horas_std:
         h_exp = (i * 24) + int(h.split(":")[0]) 
         if h_exp < 0: h_exp = 0
-        fila = [f_str, h, h_exp, 300, 310, 320, 305, 300, 290]
-        data_inicial.append(fila)
+        data_inicial.append([f_str, h, h_exp, 300, 310, 320, 305, 300, 290])
 
-# CORRECCIÓN MÓVIL TAMBIÉN AQUÍ
 df_meds = st.data_editor(
     pd.DataFrame(data_inicial, columns=cols_meds), 
     num_rows="dynamic",
-    use_container_width=True # <--- IMPORTANTE PARA MÓVIL
+    use_container_width=True
 )
 
-# Promedio
 for col in cols_meds[3:]:
     df_meds[col] = pd.to_numeric(df_meds[col], errors='coerce').fillna(0)
 promedio_ppm = df_meds.iloc[:, 3:].values.flatten().mean()
@@ -179,10 +170,7 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
     pdf.ln(2)
     
     h_tiempos = ["Evento", "Fecha", "Hora", "Total Horas"]
-    d_tiempos = [
-        ["Inyección", str(f_ini), str(h_ini), f"{horas_exp:.1f}"],
-        ["Ventilación", str(f_ter), str(h_ter), "---"]
-    ]
+    d_tiempos = [["Inyección", str(f_ini), str(h_ini), f"{horas_exp:.1f}"], ["Ventilación", str(f_ter), str(h_ter), "---"]]
     pdf.tabla_estilizada(h_tiempos, d_tiempos, [45, 45, 45, 45])
 
     # 3. DOSIS
@@ -190,14 +178,13 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
     data_dosis_pdf = []
     for _, row in df_dosis.iterrows():
         data_dosis_pdf.append([str(row['Piso']), str(row['Bandejas']), str(row['Mini-Ropes'])])
-    
     data_dosis_pdf.append(["TOTALES", str(total_bandejas), str(total_ropes)])
     pdf.tabla_estilizada(["Piso / Sector", "Bandejas", "Mini-Ropes"], data_dosis_pdf, [80, 50, 50])
     pdf.ln(3)
     pdf.set_font("Arial", "B", 10)
     pdf.cell(0, 8, f"DOSIS FINAL: {dosis_final:.2f} g/m3", ln=1, align="R")
 
-    # 4. GRÁFICO
+    # 4. GRÁFICO (CON ARCHIVO TEMPORAL)
     pdf.add_page()
     pdf.titulo_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)")
     
@@ -205,61 +192,72 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
     eje_x = df_meds["Hrs Exp"]
     for col in cols_meds[3:]:
         ax.plot(eje_x, df_meds[col], marker='o', label=col)
-        
-    ax.axhline(300, color='red', linestyle='--', label="Mínimo 300 PPM")
-    ax.set_xlabel("Horas de Exposición")
-    ax.set_ylabel("PPM")
+    ax.axhline(300, color='red', linestyle='--')
     ax.legend(loc='upper left', bbox_to_anchor=(1, 1), fontsize='small')
     ax.set_title("Curva de Gas por Piso")
     plt.tight_layout()
-    fig.savefig("grafico.png", dpi=300)
-    pdf.image("grafico.png", x=10, w=190)
+    
+    # Guardado seguro en la nube
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_graf:
+        fig.savefig(tmp_graf.name, dpi=300)
+        tmp_graf_path = tmp_graf.name
+    
+    pdf.image(tmp_graf_path, x=10, w=190)
     pdf.ln(5)
+    os.remove(tmp_graf_path) # Limpieza
     
     # Tabla Mediciones
     headers_pdf = ["Fecha", "Hora", "Hrs", "Sub", "P1", "P2", "P3", "P4", "P5"]
     vals_pdf = []
     for _, row in df_meds.iterrows():
-        fila_temp = []
-        for item in row: fila_temp.append(str(item))
-        vals_pdf.append(fila_temp)
-    
-    w_fecha, w_hora, w_hrs, w_piso = 20, 15, 12, 20
-    anchos = [w_fecha, w_hora, w_hrs] + [w_piso]*6
+        vals_pdf.append([str(x) for x in row])
+    anchos = [20, 15, 12] + [20]*6
     pdf.tabla_estilizada(headers_pdf, vals_pdf, anchos)
 
     # 5. CONCLUSIONES
     pdf.titulo_seccion("V", "CONCLUSIONES")
-    txt_concl = (f"1. Tiempo de exposición: {horas_exp:.1f} horas.\n"
-                 f"2. Promedio concentración global: {promedio_ppm:.0f} PPM.\n"
-                 f"3. Tratamiento aprobado.")
+    txt_concl = (f"1. Tiempo de exposición: {horas_exp:.1f} horas.\n2. Promedio concentración global: {promedio_ppm:.0f} PPM.\n3. Tratamiento aprobado.")
     pdf.multi_cell(0, 6, txt_concl)
 
-    # 6. FOTOS
+    # 6. FOTOS (ARREGLO DE CARGA DE IMÁGENES)
     if fotos:
         pdf.add_page()
         pdf.titulo_seccion("VI", "ANEXO FOTOGRÁFICO")
         for i, f in enumerate(fotos):
-            with open(f"temp_{i}.png", "wb") as fi: fi.write(f.getbuffer())
-            if i % 2 == 0: y_act = pdf.get_y(); pdf.image(f"temp_{i}.png", x=10, y=y_act, w=90)
-            else: pdf.image(f"temp_{i}.png", x=110, y=y_act, w=90); pdf.ln(70)
-            os.remove(f"temp_{i}.png")
+            # Guardamos la foto en un lugar seguro del servidor temporalmente
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
+                tmp_file.write(f.getvalue())
+                tmp_path = tmp_file.name
+            
+            try:
+                if i % 2 == 0: 
+                    y_act = pdf.get_y()
+                    pdf.image(tmp_path, x=10, y=y_act, w=90)
+                else: 
+                    pdf.image(tmp_path, x=110, y=y_act, w=90)
+                    pdf.ln(70)
+            except Exception as e:
+                st.error(f"Error con la foto {i+1}: {e}")
+            finally:
+                os.remove(tmp_path) # Borramos la foto temporal para no llenar el servidor
 
-    try:
-        pdf.set_y(-40); pdf.image('firma.png', x=140, w=40); pdf.ln(5)
-        pdf.cell(0, 5, "Nicholas Palma Carvajal", align="R", ln=1)
-        pdf.cell(0, 5, "Supervisor Técnico", align="R", ln=1)
-    except: pass
+    # Firma
+    if os.path.exists('firma.png'):
+        try:
+            pdf.set_y(-40); pdf.image('firma.png', x=140, w=40); pdf.ln(5)
+            pdf.cell(0, 5, "Nicholas Palma Carvajal", align="R", ln=1)
+            pdf.cell(0, 5, "Supervisor Técnico", align="R", ln=1)
+        except: pass
 
-    pdf.output("Informe_Rentokil_Final.pdf")
-    
-    # --- BOTÓN DE DESCARGA PARA CELULAR ---
-    with open("Informe_Rentokil_Final.pdf", "rb") as f:
-        pdf_data = f.read()
+    # --- DESCARGA ---
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+        pdf.output(tmp_pdf.name)
+        with open(tmp_pdf.name, "rb") as f:
+            pdf_data = f.read()
     
     st.success("✅ Informe Generado Exitosamente!")
     st.download_button(
-        label="📲 DESCARGAR PDF EN TU MÓVIL",
+        label="📲 DESCARGAR PDF FINAL",
         data=pdf_data,
         file_name="Informe_Rentokil_Final.pdf",
         mime="application/pdf"
