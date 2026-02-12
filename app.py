@@ -5,7 +5,7 @@ from fpdf import FPDF
 import datetime
 import os
 import tempfile
-from PIL import Image, ImageOps # <--- ImageOps es clave para el recorte
+from PIL import Image, ImageOps
 
 # --- CONFIGURACIÓN VISUAL ---
 st.set_page_config(layout="wide", page_title="Rentokil Mobile PRO")
@@ -15,25 +15,12 @@ COLOR_TABLA_FILA = (255, 255, 255)
 
 # --- FUNCIÓN DE IMAGEN PROFESIONAL ---
 def procesar_imagen_estilizada(uploaded_file):
-    """
-    1. Corrige rotación.
-    2. Recorta inteligentemente al centro para que todas tengan el mismo tamaño (4:3).
-    3. Convierte a JPG ligero.
-    """
     try:
         image = Image.open(uploaded_file)
-        
-        # 1. Corregir orientación (EXIF)
         image = ImageOps.exif_transpose(image)
-        
-        # 2. Convertir a RGB
         image = image.convert('RGB')
-        
-        # 3. RECORTAR A TAMAÑO FIJO (Formato 4:3 -> 800x600 px)
-        # Esto hace que la grilla se vea perfecta y uniforme
+        # Recorte 4:3 (800x600)
         image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS)
-        
-        # 4. Guardar
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         image_fixed.save(tmp.name, format='JPEG', quality=85)
         return tmp.name
@@ -88,7 +75,11 @@ class PDF(FPDF):
             self.ln()
 
 # --- INTERFAZ ---
-st.title("🛡️ Generador Rentokil v7.0 (Golden Master)")
+st.title("🛡️ Generador Rentokil v7.1")
+
+# Inicializar estado de memoria para el PDF
+if "pdf_data" not in st.session_state:
+    st.session_state.pdf_data = None
 
 # ... DATOS ...
 st.subheader("I. Datos Generales")
@@ -156,6 +147,7 @@ promedio_ppm = df_meds.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(
 st.subheader("V. Anexo Fotográfico General")
 fotos_anexo = st.file_uploader("Fotos Generales (Se ajustarán automáticamente)", accept_multiple_files=True, key="anexo")
 
+# --- GENERACIÓN DEL INFORME ---
 if st.button("🚀 GENERAR INFORME OFICIAL"):
     pdf = PDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -182,7 +174,6 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
     d_dosis.append(["TOTALES", str(total_bandejas), str(total_ropes)])
     pdf.tabla_estilizada(["Sector", "Bandejas", "Mini-Ropes"], d_dosis, [80, 50, 50])
     
-    # FOTOS DOSIS PAGINA 1
     if fotos_dosis:
         pdf.ln(2)
         y_start = pdf.get_y()
@@ -191,32 +182,27 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
             if tmp_path:
                 try:
                     x_pos = 10 if i == 0 else 105
-                    # 85x60mm es proporción 4:3 aprox, se verá ordenado
                     pdf.image(tmp_path, x=x_pos, y=y_start, w=85, h=60) 
                     os.remove(tmp_path)
                 except: pass
-        pdf.ln(65) # Espacio suficiente para las fotos
+        pdf.ln(65)
 
     pdf.ln(2)
     pdf.set_font("Arial", "B", 10)
     pdf.cell(0, 8, f"DOSIS FINAL: {dosis_final:.2f} g/m3", ln=1, align="R")
     
-    # 4. GRAFICO CORREGIDO
+    # 4. GRAFICO
     pdf.add_page()
     pdf.titulo_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)")
-    fig, ax = plt.subplots(figsize=(10, 5)) # Un poco más alto para que quepa la leyenda arriba
+    fig, ax = plt.subplots(figsize=(10, 5))
     eje_x_labels = df_meds["Fecha"] + "\n" + df_meds["Hora"]
     
     for col in df_meds.columns[2:]: 
         ax.plot(eje_x_labels, pd.to_numeric(df_meds[col], errors='coerce'), marker='o', label=col)
     
     ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal')
-    
-    # LEYENDA ARRIBA DEL GRÁFICO (SOLUCIÓN AL TRASLAPE)
     ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False, fontsize='small')
-    
     plt.xticks(rotation=45, fontsize=8)
-    # Ajustamos márgenes para que la leyenda no se corte
     plt.subplots_adjust(top=0.85)
     plt.tight_layout()
     
@@ -233,9 +219,7 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
         pdf.titulo_seccion("V", "ANEXO FOTOGRÁFICO")
         
         for i, f in enumerate(fotos_anexo):
-            # Usamos la función estilizada (recorte 4:3)
             tmp_path = procesar_imagen_estilizada(f)
-            
             if tmp_path:
                 try:
                     if pdf.get_y() > 200: 
@@ -243,20 +227,16 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
                         pdf.set_y(20)
 
                     y_act = pdf.get_y()
-                    
-                    # Tamaño fijo W=90, H=65 para uniformidad
                     if i % 2 == 0:
                         pdf.image(tmp_path, x=10, y=y_act, w=90, h=65)
                     else: 
                         pdf.image(tmp_path, x=110, y=y_act, w=90, h=65)
-                        pdf.ln(70) # Bajar cursor
-                    
+                        pdf.ln(70)
                     os.remove(tmp_path)
                 except: pass
 
-    # 6. CONCLUSIONES Y FIRMA (PÁGINA FINAL FORZADA)
-    pdf.add_page() # <--- ESTO SOLUCIONA LA SUPERPOSICIÓN DEFINITIVAMENTE
-    
+    # 6. CONCLUSIONES (Pagina Nueva)
+    pdf.add_page()
     pdf.titulo_seccion("VI", "CONCLUSIONES TÉCNICAS")
     
     conclusiones_texto = (
@@ -269,27 +249,37 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
         f"Por lo anterior, el servicio se declara CONFORME, cumpliendo con los estándares de seguridad y "
         f"calidad establecidos por Rentokil Initial Chile."
     )
-    
     pdf.set_font("Arial", "", 10)
     pdf.multi_cell(0, 6, conclusiones_texto)
     pdf.ln(20)
 
-    # FIRMA CENTRADA Y LIMPIA
+    # FIRMA
     if os.path.exists('firma.png'):
         try:
             ancho_firma = 60
             x_centro = (210 - ancho_firma) / 2
             pdf.image('firma.png', x=x_centro, w=ancho_firma)
-            
             pdf.ln(5)
             pdf.set_font("Arial", "B", 10)
             pdf.cell(0, 5, "Nicholas Palma Carvajal", align="C", ln=1)
             pdf.cell(0, 5, "Supervisor Técnico", align="C", ln=1)
         except: pass
 
+    # GUARDAR EN MEMORIA (SOLUCIÓN DEL ERROR)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
         pdf.output(tmp_pdf.name)
         with open(tmp_pdf.name, "rb") as f:
-            st.download_button("📲 DESCARGAR PDF FINAL", f.read(), "Informe_Rentokil.pdf", "application/pdf")
-        with open(tmp_pdf.name, "rb") as f:
-            st.download_button("📲 DESCARGAR PDF FINAL", f.read(), "Informe_Rentokil.pdf", "application/pdf")
+            st.session_state.pdf_data = f.read()  # Guardamos en sesión
+    
+    st.rerun() # Recargamos para mostrar el botón abajo
+
+# --- BOTÓN DE DESCARGA (FUERA DEL BUCLE) ---
+if st.session_state.pdf_data:
+    st.success("✅ Informe Generado Exitosamente")
+    st.download_button(
+        label="📲 DESCARGAR PDF FINAL",
+        data=st.session_state.pdf_data,
+        file_name="Informe_Rentokil.pdf",
+        mime="application/pdf",
+        key="btn_descarga_final" # CLAVE ÚNICA PARA EVITAR ERROR
+    )
