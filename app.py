@@ -13,6 +13,28 @@ COLOR_PRIMARIO = (227, 6, 19)
 COLOR_TABLA_HEAD = (220, 220, 220)
 COLOR_TABLA_FILA = (255, 255, 255)
 
+# --- FUNCIÓN AUXILIAR PARA IMÁGENES ---
+def procesar_imagen_segura(uploaded_file):
+    """Convierte cualquier imagen a JPG estándar para evitar errores en PDF"""
+    try:
+        image = Image.open(uploaded_file)
+        # Corrección de orientación (común en fotos de iPhone)
+        try:
+            from PIL import ImageOps
+            image = ImageOps.exif_transpose(image)
+        except:
+            pass
+            
+        # Convertir a RGB (elimina transparencias que rompen el PDF)
+        image = image.convert('RGB')
+        
+        # Guardar en temporal
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        image.save(tmp.name, format='JPEG', quality=85)
+        return tmp.name
+    except Exception as e:
+        return None
+
 class PDF(FPDF):
     def header(self):
         logo_path = 'logo.png'
@@ -61,7 +83,7 @@ class PDF(FPDF):
             self.ln()
 
 # --- INTERFAZ ---
-st.title("🛡️ Generador Rentokil v6.7")
+st.title("🛡️ Generador Rentokil v6.8")
 
 # ... SECCIONES DE DATOS ...
 st.subheader("I. Datos Generales")
@@ -149,7 +171,7 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
     pdf.ln(2)
     pdf.tabla_estilizada(["Evento", "Fecha", "Hora", "Total Horas"], [["Inyección", str(f_ini), str(h_ini), f"{horas_exp:.1f}"], ["Ventilación", str(f_ter), str(h_ter), "---"]], [45, 45, 45, 45])
     
-    # 3. DOSIS (PORTADA)
+    # 3. DOSIS
     pdf.titulo_seccion("III", "DOSIFICACIÓN")
     d_dosis = [[str(r['Piso']), str(r['Bandejas']), str(r['Mini-Ropes'])] for _, r in df_dosis.iterrows()]
     d_dosis.append(["TOTALES", str(total_bandejas), str(total_ropes)])
@@ -160,15 +182,13 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
         pdf.ln(2)
         y_start = pdf.get_y()
         for i, f in enumerate(fotos_dosis[:2]):
-            try:
-                img = Image.open(f).convert('RGB')
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_img:
-                    img.save(tmp_img.name, format='JPEG', quality=80)
-                    tmp_path = tmp_img.name
-                x_pos = 10 if i == 0 else 105
-                pdf.image(tmp_path, x=x_pos, y=y_start, w=85, h=45) 
-                os.remove(tmp_path)
-            except: pass
+            tmp_path = procesar_imagen_segura(f)
+            if tmp_path:
+                try:
+                    x_pos = 10 if i == 0 else 105
+                    pdf.image(tmp_path, x=x_pos, y=y_start, w=85, h=45) 
+                    os.remove(tmp_path)
+                except: pass
         pdf.ln(48) 
 
     pdf.ln(2)
@@ -192,39 +212,46 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
     pdf.ln(5)
     pdf.tabla_estilizada(["Fech", "Hr", "S", "P1", "P2", "P3", "P4", "P5"], [[str(x) for x in r] for _, r in df_meds.iterrows()], [25, 20, 20, 20, 20, 20, 20, 20])
     
-    # --- CAMBIO DE ORDEN AQUI ---
-
-    # 5. ITEM V: ANEXO FOTOGRÁFICO (ANTES DE CONCLUSIONES)
+    # 5. ITEM V: ANEXO FOTOGRÁFICO
     if fotos_anexo:
         pdf.add_page()
         pdf.titulo_seccion("V", "ANEXO FOTOGRÁFICO")
+        
         for i, f in enumerate(fotos_anexo):
-            try:
-                img = Image.open(f).convert('RGB')
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_img:
-                    img.save(tmp_img.name, format='JPEG', quality=85)
-                    tmp_path = tmp_img.name
-                
-                # Control de posición
-                if i % 2 == 0:
-                    # Si queda poco espacio en la página, saltamos
-                    if pdf.get_y() > 200: pdf.add_page()
-                    y_act = pdf.get_y()
-                    pdf.image(tmp_path, x=10, y=y_act, w=90)
-                else: 
-                    # La segunda foto va al lado
-                    pdf.image(tmp_path, x=110, y=y_act, w=90)
-                    pdf.ln(70) # Bajamos después de poner las dos
-                
-                os.remove(tmp_path)
-            except: pass
+            tmp_path = procesar_imagen_segura(f)
+            
+            if tmp_path: # Solo si la imagen se procesó bien
+                try:
+                    # Control de salto de página antes de poner foto
+                    if pdf.get_y() > 200: 
+                        pdf.add_page()
+                        pdf.set_y(20) # Margen superior seguro
 
-    # 6. ITEM VI: CONCLUSIONES TÉCNICAS (AL FINAL)
-    # Verificamos espacio. Si queda poco, pasamos a nueva página para que no se corte firma
-    if pdf.get_y() > 220:
+                    y_act = pdf.get_y()
+                    
+                    if i % 2 == 0:
+                        # Foto Izquierda
+                        pdf.image(tmp_path, x=10, y=y_act, w=90)
+                    else: 
+                        # Foto Derecha
+                        pdf.image(tmp_path, x=110, y=y_act, w=90)
+                        pdf.ln(70) # Bajar cursor solo después de completar la fila
+                    
+                    os.remove(tmp_path)
+                except: pass
+        
+        # CORRECCIÓN DE SUPERPOSICIÓN:
+        # Si el número de fotos es impar, el cursor nunca bajó en el bucle 'else'.
+        # Forzamos un salto de línea si terminamos en el lado izquierdo.
+        if len(fotos_anexo) % 2 != 0:
+            pdf.ln(70)
+
+    # 6. ITEM VI: CONCLUSIONES (Verificación de espacio anti-superposición)
+    espacio_restante = 270 - pdf.get_y() # 270 es aprox el fin de página útil
+    if espacio_restante < 50: # Si queda menos de 5cm, saltar pagina
         pdf.add_page()
     else:
-        pdf.ln(10) # Separación si viene de las fotos
+        pdf.ln(10)
 
     pdf.titulo_seccion("VI", "CONCLUSIONES TÉCNICAS")
     
@@ -241,26 +268,19 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
     
     pdf.set_font("Arial", "", 10)
     pdf.multi_cell(0, 6, conclusiones_texto)
-    pdf.ln(15) # Espacio antes de la firma
+    pdf.ln(15)
 
-    # FIRMA CENTRADA Y MAS GRANDE
+    # FIRMA (SOLO IMAGEN, SIN TEXTO REDUNDANTE)
     if os.path.exists('firma.png'):
         try:
-            # Calculamos el centro de la pagina (ancho A4 ~210mm)
-            # Queremos la firma de 60mm de ancho (más alargada)
             ancho_firma = 60
             x_centro = (210 - ancho_firma) / 2
             
-            # Verificamos que no se salga de la hoja
+            # Verificar si la firma cabe, sino saltar página
             if pdf.get_y() > 240: pdf.add_page()
             
-            # Ponemos la imagen centrada
             pdf.image('firma.png', x=x_centro, w=ancho_firma)
-            
-            # Texto debajo, también centrado
-            pdf.ln(5)
-            pdf.cell(0, 5, "Nicholas Palma Carvajal", align="C", ln=1)
-            pdf.cell(0, 5, "Supervisor Técnico", align="C", ln=1)
+            # SE ELIMINARON LAS LÍNEAS DE TEXTO AQUÍ
         except: pass
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
