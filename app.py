@@ -13,18 +13,34 @@ COLOR_PRIMARIO = (227, 6, 19)
 COLOR_TABLA_HEAD = (220, 220, 220)
 COLOR_TABLA_FILA = (255, 255, 255)
 
-# --- FUNCIÓN DE IMAGEN PROFESIONAL ---
+# --- FUNCIONES DE IMAGEN ---
 def procesar_imagen_estilizada(uploaded_file):
     try:
         image = Image.open(uploaded_file)
         image = ImageOps.exif_transpose(image)
         image = image.convert('RGB')
-        # Recorte 4:3 (800x600)
+        # Recorte 4:3 (800x600) para uniformidad
         image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         image_fixed.save(tmp.name, format='JPEG', quality=85)
         return tmp.name
     except Exception as e:
+        return None
+
+def procesar_firma(uploaded_file):
+    try:
+        image = Image.open(uploaded_file)
+        image = ImageOps.exif_transpose(image)
+        image = image.convert('RGBA')
+        # Fondo blanco para transparencias
+        background = Image.new('RGBA', image.size, (255, 255, 255))
+        alpha_composite = Image.alpha_composite(background, image)
+        alpha_composite = alpha_composite.convert('RGB')
+        
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        alpha_composite.save(tmp.name, format='JPEG', quality=90)
+        return tmp.name
+    except:
         return None
 
 class PDF(FPDF):
@@ -75,13 +91,12 @@ class PDF(FPDF):
             self.ln()
 
 # --- INTERFAZ ---
-st.title("🛡️ Generador Rentokil v7.1")
+st.title("🛡️ Generador Rentokil v7.3")
 
-# Inicializar estado de memoria para el PDF
 if "pdf_data" not in st.session_state:
     st.session_state.pdf_data = None
 
-# ... DATOS ...
+# ... DATOS I ...
 st.subheader("I. Datos Generales")
 DATABASE_MOLINOS = {
     "MOLINO CASABLANCA": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "direccion": "Alejandro Galaz N° 500, Casablanca", "volumen": 4850},
@@ -93,7 +108,6 @@ DATABASE_MOLINOS = {
 }
 opcion = st.selectbox("Seleccione Planta", list(DATABASE_MOLINOS.keys()) + ["OTRO"])
 d = DATABASE_MOLINOS.get(opcion, {"cliente": "", "direccion": "", "volumen": 0})
-
 c1, c2 = st.columns(2)
 with c1:
     cliente = st.text_input("Razón Social", d["cliente"])
@@ -104,6 +118,7 @@ with c2:
     fecha_inf = st.date_input("Fecha Informe", datetime.date.today())
     atencion = st.text_input("Atención", "Jefe de Planta")
 
+# ... DATOS II ...
 st.subheader("II. Detalles Técnicos")
 c3, c4 = st.columns(2)
 with c3:
@@ -116,6 +131,7 @@ with c4:
     h_ter = st.time_input("Hora Término", datetime.time(19, 0))
 horas_exp = (datetime.datetime.combine(f_ter, h_ter) - datetime.datetime.combine(f_ini, h_ini)).total_seconds() / 3600
 
+# ... DATOS III ...
 st.subheader("III. Distribución y Dosis")
 df_dosis = st.data_editor(pd.DataFrame([
     {"Piso": "Subterráneo", "Bandejas": 10, "Mini-Ropes": 2},
@@ -125,15 +141,14 @@ df_dosis = st.data_editor(pd.DataFrame([
     {"Piso": "Piso 4", "Bandejas": 8, "Mini-Ropes": 1},
     {"Piso": "Piso 5", "Bandejas": 5, "Mini-Ropes": 0},
 ], columns=["Piso", "Bandejas", "Mini-Ropes"]), num_rows="dynamic", use_container_width=True)
-
-st.info("📷 Puedes subir múltiples fotos a la vez.")
-fotos_dosis = st.file_uploader("Fotos Evidencia Dosificación (Página 1)", accept_multiple_files=True, key="dosis")
-
+st.info("📷 Fotos dosificación (Página 1)")
+fotos_dosis = st.file_uploader("Subir evidencia dosis", accept_multiple_files=True, key="dosis")
 total_bandejas = df_dosis["Bandejas"].sum()
 total_ropes = df_dosis["Mini-Ropes"].sum()
 gramos_totales = (total_bandejas * 500) + (total_ropes * 333)
 dosis_final = gramos_totales / volumen_total if volumen_total > 0 else 0
 
+# ... DATOS IV ...
 st.subheader("IV. Mediciones")
 data_inicial = []
 for i in range(3):
@@ -144,10 +159,18 @@ cols_meds = ["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "
 df_meds = st.data_editor(pd.DataFrame(data_inicial, columns=cols_meds), num_rows="dynamic", use_container_width=True)
 promedio_ppm = df_meds.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
 
-st.subheader("V. Anexo Fotográfico General")
-fotos_anexo = st.file_uploader("Fotos Generales (Se ajustarán automáticamente)", accept_multiple_files=True, key="anexo")
+# ... DATOS V ...
+st.subheader("V. Anexo Fotográfico")
+fotos_anexo = st.file_uploader("Fotos Generales", accept_multiple_files=True, key="anexo")
 
-# --- GENERACIÓN DEL INFORME ---
+# --- FIRMA DEL FIRMANTE ---
+st.markdown("---")
+st.subheader("✍️ Firma Supervisor")
+st.caption("Suba la imagen de la firma/timbre que aparecerá al final.")
+firma_file = st.file_uploader("Subir firma (opcional)", type=["png", "jpg", "jpeg"])
+st.markdown("---")
+
+# --- GENERACIÓN ---
 if st.button("🚀 GENERAR INFORME OFICIAL"):
     pdf = PDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -196,49 +219,38 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
     pdf.titulo_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)")
     fig, ax = plt.subplots(figsize=(10, 5))
     eje_x_labels = df_meds["Fecha"] + "\n" + df_meds["Hora"]
-    
     for col in df_meds.columns[2:]: 
         ax.plot(eje_x_labels, pd.to_numeric(df_meds[col], errors='coerce'), marker='o', label=col)
-    
     ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal')
     ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False, fontsize='small')
     plt.xticks(rotation=45, fontsize=8)
     plt.subplots_adjust(top=0.85)
     plt.tight_layout()
-    
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_graf:
         fig.savefig(tmp_graf.name, dpi=300)
         pdf.image(tmp_graf.name, x=10, w=190)
-    
     pdf.ln(5)
     pdf.tabla_estilizada(["Fech", "Hr", "S", "P1", "P2", "P3", "P4", "P5"], [[str(x) for x in r] for _, r in df_meds.iterrows()], [25, 20, 20, 20, 20, 20, 20, 20])
     
-    # 5. ANEXO FOTOGRÁFICO
+    # 5. ANEXO FOTOGRAFICO
     if fotos_anexo:
         pdf.add_page()
         pdf.titulo_seccion("V", "ANEXO FOTOGRÁFICO")
-        
         for i, f in enumerate(fotos_anexo):
             tmp_path = procesar_imagen_estilizada(f)
             if tmp_path:
                 try:
                     if pdf.get_y() > 200: 
-                        pdf.add_page()
-                        pdf.set_y(20)
-
+                        pdf.add_page(); pdf.set_y(20)
                     y_act = pdf.get_y()
-                    if i % 2 == 0:
-                        pdf.image(tmp_path, x=10, y=y_act, w=90, h=65)
-                    else: 
-                        pdf.image(tmp_path, x=110, y=y_act, w=90, h=65)
-                        pdf.ln(70)
+                    if i % 2 == 0: pdf.image(tmp_path, x=10, y=y_act, w=90, h=65)
+                    else: pdf.image(tmp_path, x=110, y=y_act, w=90, h=65); pdf.ln(70)
                     os.remove(tmp_path)
                 except: pass
 
-    # 6. CONCLUSIONES (Pagina Nueva)
+    # 6. CONCLUSIONES (Pagina Nueva Obligatoria)
     pdf.add_page()
     pdf.titulo_seccion("VI", "CONCLUSIONES TÉCNICAS")
-    
     conclusiones_texto = (
         f"De acuerdo con los registros monitoreados, se certifica que el tratamiento de fumigación "
         f"en las instalaciones de {planta} se realizó cumpliendo un tiempo de exposición efectivo de "
@@ -253,33 +265,32 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
     pdf.multi_cell(0, 6, conclusiones_texto)
     pdf.ln(20)
 
-    # FIRMA
-    if os.path.exists('firma.png'):
+    # --- FIRMA (SOLO IMAGEN, SIN TEXTO REDUNDANTE) ---
+    ruta_firma_a_usar = None
+    if firma_file:
+        ruta_firma_a_usar = procesar_firma(firma_file)
+    elif os.path.exists('firma.png'):
+        ruta_firma_a_usar = 'firma.png'
+        
+    if ruta_firma_a_usar:
         try:
             ancho_firma = 60
             x_centro = (210 - ancho_firma) / 2
-            pdf.image('firma.png', x=x_centro, w=ancho_firma)
-            pdf.ln(5)
-            pdf.set_font("Arial", "B", 10)
-            pdf.cell(0, 5, "Nicholas Palma Carvajal", align="C", ln=1)
-            pdf.cell(0, 5, "Supervisor Técnico", align="C", ln=1)
+            pdf.image(ruta_firma_a_usar, x=x_centro, w=ancho_firma)
+            
+            # Limpiar temporal
+            if firma_file and ruta_firma_a_usar != 'firma.png':
+                os.remove(ruta_firma_a_usar)
         except: pass
+    
+    # YA NO SE ESCRIBE NINGÚN TEXTO DEBAJO
 
-    # GUARDAR EN MEMORIA (SOLUCIÓN DEL ERROR)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
         pdf.output(tmp_pdf.name)
         with open(tmp_pdf.name, "rb") as f:
-            st.session_state.pdf_data = f.read()  # Guardamos en sesión
-    
-    st.rerun() # Recargamos para mostrar el botón abajo
+            st.session_state.pdf_data = f.read()
+    st.rerun()
 
-# --- BOTÓN DE DESCARGA (FUERA DEL BUCLE) ---
 if st.session_state.pdf_data:
     st.success("✅ Informe Generado Exitosamente")
-    st.download_button(
-        label="📲 DESCARGAR PDF FINAL",
-        data=st.session_state.pdf_data,
-        file_name="Informe_Rentokil.pdf",
-        mime="application/pdf",
-        key="btn_descarga_final" # CLAVE ÚNICA PARA EVITAR ERROR
-    )
+    st.download_button(label="📲 DESCARGAR PDF FINAL", data=st.session_state.pdf_data, file_name="Informe_Rentokil.pdf", mime="application/pdf", key="btn_descarga_final")
