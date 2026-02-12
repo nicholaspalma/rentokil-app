@@ -5,7 +5,7 @@ from fpdf import FPDF
 import datetime
 import os
 import tempfile
-from PIL import Image
+from PIL import Image, ImageOps # <--- ImageOps es clave para el recorte
 
 # --- CONFIGURACIÓN VISUAL ---
 st.set_page_config(layout="wide", page_title="Rentokil Mobile PRO")
@@ -13,24 +13,29 @@ COLOR_PRIMARIO = (227, 6, 19)
 COLOR_TABLA_HEAD = (220, 220, 220)
 COLOR_TABLA_FILA = (255, 255, 255)
 
-# --- FUNCIÓN AUXILIAR PARA IMÁGENES ---
-def procesar_imagen_segura(uploaded_file):
-    """Convierte cualquier imagen a JPG estándar para evitar errores en PDF"""
+# --- FUNCIÓN DE IMAGEN PROFESIONAL ---
+def procesar_imagen_estilizada(uploaded_file):
+    """
+    1. Corrige rotación.
+    2. Recorta inteligentemente al centro para que todas tengan el mismo tamaño (4:3).
+    3. Convierte a JPG ligero.
+    """
     try:
         image = Image.open(uploaded_file)
-        # Corrección de orientación (común en fotos de iPhone)
-        try:
-            from PIL import ImageOps
-            image = ImageOps.exif_transpose(image)
-        except:
-            pass
-            
-        # Convertir a RGB (elimina transparencias que rompen el PDF)
+        
+        # 1. Corregir orientación (EXIF)
+        image = ImageOps.exif_transpose(image)
+        
+        # 2. Convertir a RGB
         image = image.convert('RGB')
         
-        # Guardar en temporal
+        # 3. RECORTAR A TAMAÑO FIJO (Formato 4:3 -> 800x600 px)
+        # Esto hace que la grilla se vea perfecta y uniforme
+        image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS)
+        
+        # 4. Guardar
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        image.save(tmp.name, format='JPEG', quality=85)
+        image_fixed.save(tmp.name, format='JPEG', quality=85)
         return tmp.name
     except Exception as e:
         return None
@@ -83,9 +88,9 @@ class PDF(FPDF):
             self.ln()
 
 # --- INTERFAZ ---
-st.title("🛡️ Generador Rentokil v6.8")
+st.title("🛡️ Generador Rentokil v7.0 (Golden Master)")
 
-# ... SECCIONES DE DATOS ...
+# ... DATOS ...
 st.subheader("I. Datos Generales")
 DATABASE_MOLINOS = {
     "MOLINO CASABLANCA": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "direccion": "Alejandro Galaz N° 500, Casablanca", "volumen": 4850},
@@ -130,8 +135,8 @@ df_dosis = st.data_editor(pd.DataFrame([
     {"Piso": "Piso 5", "Bandejas": 5, "Mini-Ropes": 0},
 ], columns=["Piso", "Bandejas", "Mini-Ropes"]), num_rows="dynamic", use_container_width=True)
 
-st.markdown("**📸 Evidencia de Dosificación (Aparecerá en Página 1)**")
-fotos_dosis = st.file_uploader("Subir fotos de bandejas/ropes instalados", accept_multiple_files=True, key="dosis")
+st.info("📷 Puedes subir múltiples fotos a la vez.")
+fotos_dosis = st.file_uploader("Fotos Evidencia Dosificación (Página 1)", accept_multiple_files=True, key="dosis")
 
 total_bandejas = df_dosis["Bandejas"].sum()
 total_ropes = df_dosis["Mini-Ropes"].sum()
@@ -148,8 +153,8 @@ cols_meds = ["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "
 df_meds = st.data_editor(pd.DataFrame(data_inicial, columns=cols_meds), num_rows="dynamic", use_container_width=True)
 promedio_ppm = df_meds.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
 
-st.subheader("V. Anexo Fotográfico (Fotos Generales)")
-fotos_anexo = st.file_uploader("Cargar resto de evidencia", accept_multiple_files=True, key="anexo")
+st.subheader("V. Anexo Fotográfico General")
+fotos_anexo = st.file_uploader("Fotos Generales (Se ajustarán automáticamente)", accept_multiple_files=True, key="anexo")
 
 if st.button("🚀 GENERAR INFORME OFICIAL"):
     pdf = PDF()
@@ -182,77 +187,76 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
         pdf.ln(2)
         y_start = pdf.get_y()
         for i, f in enumerate(fotos_dosis[:2]):
-            tmp_path = procesar_imagen_segura(f)
+            tmp_path = procesar_imagen_estilizada(f)
             if tmp_path:
                 try:
                     x_pos = 10 if i == 0 else 105
-                    pdf.image(tmp_path, x=x_pos, y=y_start, w=85, h=45) 
+                    # 85x60mm es proporción 4:3 aprox, se verá ordenado
+                    pdf.image(tmp_path, x=x_pos, y=y_start, w=85, h=60) 
                     os.remove(tmp_path)
                 except: pass
-        pdf.ln(48) 
+        pdf.ln(65) # Espacio suficiente para las fotos
 
     pdf.ln(2)
     pdf.set_font("Arial", "B", 10)
     pdf.cell(0, 8, f"DOSIS FINAL: {dosis_final:.2f} g/m3", ln=1, align="R")
     
-    # 4. GRAFICO
+    # 4. GRAFICO CORREGIDO
     pdf.add_page()
     pdf.titulo_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)")
-    fig, ax = plt.subplots(figsize=(10, 4))
+    fig, ax = plt.subplots(figsize=(10, 5)) # Un poco más alto para que quepa la leyenda arriba
     eje_x_labels = df_meds["Fecha"] + "\n" + df_meds["Hora"]
+    
     for col in df_meds.columns[2:]: 
         ax.plot(eje_x_labels, pd.to_numeric(df_meds[col], errors='coerce'), marker='o', label=col)
-    ax.axhline(300, color='red', linestyle='--')
-    ax.legend(fontsize='small')
+    
+    ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal')
+    
+    # LEYENDA ARRIBA DEL GRÁFICO (SOLUCIÓN AL TRASLAPE)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False, fontsize='small')
+    
     plt.xticks(rotation=45, fontsize=8)
+    # Ajustamos márgenes para que la leyenda no se corte
+    plt.subplots_adjust(top=0.85)
     plt.tight_layout()
+    
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_graf:
         fig.savefig(tmp_graf.name, dpi=300)
         pdf.image(tmp_graf.name, x=10, w=190)
+    
     pdf.ln(5)
     pdf.tabla_estilizada(["Fech", "Hr", "S", "P1", "P2", "P3", "P4", "P5"], [[str(x) for x in r] for _, r in df_meds.iterrows()], [25, 20, 20, 20, 20, 20, 20, 20])
     
-    # 5. ITEM V: ANEXO FOTOGRÁFICO
+    # 5. ANEXO FOTOGRÁFICO
     if fotos_anexo:
         pdf.add_page()
         pdf.titulo_seccion("V", "ANEXO FOTOGRÁFICO")
         
         for i, f in enumerate(fotos_anexo):
-            tmp_path = procesar_imagen_segura(f)
+            # Usamos la función estilizada (recorte 4:3)
+            tmp_path = procesar_imagen_estilizada(f)
             
-            if tmp_path: # Solo si la imagen se procesó bien
+            if tmp_path:
                 try:
-                    # Control de salto de página antes de poner foto
                     if pdf.get_y() > 200: 
                         pdf.add_page()
-                        pdf.set_y(20) # Margen superior seguro
+                        pdf.set_y(20)
 
                     y_act = pdf.get_y()
                     
+                    # Tamaño fijo W=90, H=65 para uniformidad
                     if i % 2 == 0:
-                        # Foto Izquierda
-                        pdf.image(tmp_path, x=10, y=y_act, w=90)
+                        pdf.image(tmp_path, x=10, y=y_act, w=90, h=65)
                     else: 
-                        # Foto Derecha
-                        pdf.image(tmp_path, x=110, y=y_act, w=90)
-                        pdf.ln(70) # Bajar cursor solo después de completar la fila
+                        pdf.image(tmp_path, x=110, y=y_act, w=90, h=65)
+                        pdf.ln(70) # Bajar cursor
                     
                     os.remove(tmp_path)
                 except: pass
-        
-        # CORRECCIÓN DE SUPERPOSICIÓN:
-        # Si el número de fotos es impar, el cursor nunca bajó en el bucle 'else'.
-        # Forzamos un salto de línea si terminamos en el lado izquierdo.
-        if len(fotos_anexo) % 2 != 0:
-            pdf.ln(70)
 
-    # 6. ITEM VI: CONCLUSIONES (Verificación de espacio anti-superposición)
-    espacio_restante = 270 - pdf.get_y() # 270 es aprox el fin de página útil
-    if espacio_restante < 50: # Si queda menos de 5cm, saltar pagina
-        pdf.add_page()
-    else:
-        pdf.ln(10)
-
+    # 6. CONCLUSIONES Y FIRMA (PÁGINA FINAL FORZADA)
+    pdf.add_page() # <--- ESTO SOLUCIONA LA SUPERPOSICIÓN DEFINITIVAMENTE
+    
     pdf.titulo_seccion("VI", "CONCLUSIONES TÉCNICAS")
     
     conclusiones_texto = (
@@ -268,22 +272,24 @@ if st.button("🚀 GENERAR INFORME OFICIAL"):
     
     pdf.set_font("Arial", "", 10)
     pdf.multi_cell(0, 6, conclusiones_texto)
-    pdf.ln(15)
+    pdf.ln(20)
 
-    # FIRMA (SOLO IMAGEN, SIN TEXTO REDUNDANTE)
+    # FIRMA CENTRADA Y LIMPIA
     if os.path.exists('firma.png'):
         try:
             ancho_firma = 60
             x_centro = (210 - ancho_firma) / 2
-            
-            # Verificar si la firma cabe, sino saltar página
-            if pdf.get_y() > 240: pdf.add_page()
-            
             pdf.image('firma.png', x=x_centro, w=ancho_firma)
-            # SE ELIMINARON LAS LÍNEAS DE TEXTO AQUÍ
+            
+            pdf.ln(5)
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(0, 5, "Nicholas Palma Carvajal", align="C", ln=1)
+            pdf.cell(0, 5, "Supervisor Técnico", align="C", ln=1)
         except: pass
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
         pdf.output(tmp_pdf.name)
+        with open(tmp_pdf.name, "rb") as f:
+            st.download_button("📲 DESCARGAR PDF FINAL", f.read(), "Informe_Rentokil.pdf", "application/pdf")
         with open(tmp_pdf.name, "rb") as f:
             st.download_button("📲 DESCARGAR PDF FINAL", f.read(), "Informe_Rentokil.pdf", "application/pdf")
