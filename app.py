@@ -6,6 +6,7 @@ import datetime
 import os
 import tempfile
 from PIL import Image, ImageOps
+import traceback
 
 # --- CONFIGURACIÓN VISUAL ---
 st.set_page_config(layout="wide", page_title="Rentokil Mobile PRO")
@@ -19,12 +20,11 @@ def procesar_imagen_estilizada(uploaded_file):
         image = Image.open(uploaded_file)
         image = ImageOps.exif_transpose(image)
         image = image.convert('RGB')
-        # Recorte 4:3 (800x600) para uniformidad
         image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         image_fixed.save(tmp.name, format='JPEG', quality=85)
         return tmp.name
-    except Exception as e:
+    except Exception:
         return None
 
 def procesar_firma(uploaded_file):
@@ -32,15 +32,12 @@ def procesar_firma(uploaded_file):
         image = Image.open(uploaded_file)
         image = ImageOps.exif_transpose(image)
         image = image.convert('RGBA')
-        # Fondo blanco para transparencias
-        background = Image.new('RGBA', image.size, (255, 255, 255))
-        alpha_composite = Image.alpha_composite(background, image)
-        alpha_composite = alpha_composite.convert('RGB')
-        
+        background = Image.new('RGB', image.size, (255, 255, 255))
+        background.paste(image, mask=image.split()[3])
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        alpha_composite.save(tmp.name, format='JPEG', quality=90)
+        background.save(tmp.name, format='JPEG', quality=90)
         return tmp.name
-    except:
+    except Exception:
         return None
 
 class PDF(FPDF):
@@ -91,7 +88,7 @@ class PDF(FPDF):
             self.ln()
 
 # --- INTERFAZ ---
-st.title("🛡️ Generador Rentokil v7.3")
+st.title("🛡️ Generador Rentokil v7.5 (Stable)")
 
 if "pdf_data" not in st.session_state:
     st.session_state.pdf_data = None
@@ -172,124 +169,133 @@ st.markdown("---")
 
 # --- GENERACIÓN ---
 if st.button("🚀 GENERAR INFORME OFICIAL"):
-    pdf = PDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    
-    # 1. INFO
-    pdf.set_font("Arial", "", 10)
-    pdf.cell(30, 6, "Cliente:", 0); pdf.cell(0, 6, cliente, 0, ln=1)
-    pdf.cell(30, 6, "Planta:", 0); pdf.cell(0, 6, f"{planta} - {direccion}", 0, ln=1)
-    pdf.cell(30, 6, "Atención:", 0); pdf.cell(0, 6, atencion, 0, ln=1)
-    pdf.cell(30, 6, "Fecha:", 0); pdf.cell(0, 6, str(fecha_inf), 0, ln=1)
-    
-    # 2. TECNICA
-    pdf.titulo_seccion("I", "SELLADO Y PLAGAS")
-    pdf.multi_cell(0, 6, f"Inspección de sellado: {'CONFORME' if sellado_ok else 'OBSERVADO'}. Plaga objetivo: {plaga}.")
-    pdf.titulo_seccion("II", "VOLÚMENES Y TIEMPOS")
-    pdf.multi_cell(0, 6, f"Volumen tratado: {volumen_total} m3. Tiempo de exposición: {horas_exp:.1f} horas.")
-    pdf.ln(2)
-    pdf.tabla_estilizada(["Evento", "Fecha", "Hora", "Total Horas"], [["Inyección", str(f_ini), str(h_ini), f"{horas_exp:.1f}"], ["Ventilación", str(f_ter), str(h_ter), "---"]], [45, 45, 45, 45])
-    
-    # 3. DOSIS
-    pdf.titulo_seccion("III", "DOSIFICACIÓN")
-    d_dosis = [[str(r['Piso']), str(r['Bandejas']), str(r['Mini-Ropes'])] for _, r in df_dosis.iterrows()]
-    d_dosis.append(["TOTALES", str(total_bandejas), str(total_ropes)])
-    pdf.tabla_estilizada(["Sector", "Bandejas", "Mini-Ropes"], d_dosis, [80, 50, 50])
-    
-    if fotos_dosis:
-        pdf.ln(2)
-        y_start = pdf.get_y()
-        for i, f in enumerate(fotos_dosis[:2]):
-            tmp_path = procesar_imagen_estilizada(f)
-            if tmp_path:
-                try:
-                    x_pos = 10 if i == 0 else 105
-                    pdf.image(tmp_path, x=x_pos, y=y_start, w=85, h=60) 
-                    os.remove(tmp_path)
-                except: pass
-        pdf.ln(65)
-
-    pdf.ln(2)
-    pdf.set_font("Arial", "B", 10)
-    pdf.cell(0, 8, f"DOSIS FINAL: {dosis_final:.2f} g/m3", ln=1, align="R")
-    
-    # 4. GRAFICO
-    pdf.add_page()
-    pdf.titulo_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    eje_x_labels = df_meds["Fecha"] + "\n" + df_meds["Hora"]
-    for col in df_meds.columns[2:]: 
-        ax.plot(eje_x_labels, pd.to_numeric(df_meds[col], errors='coerce'), marker='o', label=col)
-    ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal')
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False, fontsize='small')
-    plt.xticks(rotation=45, fontsize=8)
-    plt.subplots_adjust(top=0.85)
-    plt.tight_layout()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_graf:
-        fig.savefig(tmp_graf.name, dpi=300)
-        pdf.image(tmp_graf.name, x=10, w=190)
-    pdf.ln(5)
-    pdf.tabla_estilizada(["Fech", "Hr", "S", "P1", "P2", "P3", "P4", "P5"], [[str(x) for x in r] for _, r in df_meds.iterrows()], [25, 20, 20, 20, 20, 20, 20, 20])
-    
-    # 5. ANEXO FOTOGRAFICO
-    if fotos_anexo:
+    try:
+        pdf = PDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
-        pdf.titulo_seccion("V", "ANEXO FOTOGRÁFICO")
-        for i, f in enumerate(fotos_anexo):
-            tmp_path = procesar_imagen_estilizada(f)
-            if tmp_path:
-                try:
-                    if pdf.get_y() > 200: 
-                        pdf.add_page(); pdf.set_y(20)
-                    y_act = pdf.get_y()
-                    if i % 2 == 0: pdf.image(tmp_path, x=10, y=y_act, w=90, h=65)
-                    else: pdf.image(tmp_path, x=110, y=y_act, w=90, h=65); pdf.ln(70)
-                    os.remove(tmp_path)
-                except: pass
-
-    # 6. CONCLUSIONES (Pagina Nueva Obligatoria)
-    pdf.add_page()
-    pdf.titulo_seccion("VI", "CONCLUSIONES TÉCNICAS")
-    conclusiones_texto = (
-        f"De acuerdo con los registros monitoreados, se certifica que el tratamiento de fumigación "
-        f"en las instalaciones de {planta} se realizó cumpliendo un tiempo de exposición efectivo de "
-        f"{horas_exp:.1f} horas.\n\n"
-        f"El monitoreo de concentración de gas Fosfina (PH3) arrojó un promedio global de {promedio_ppm:.0f} PPM, "
-        f"manteniéndose en todo momento dentro de los rangos de eficacia requeridos para el control de "
-        f"{plaga}.\n\n"
-        f"Por lo anterior, el servicio se declara CONFORME, cumpliendo con los estándares de seguridad y "
-        f"calidad establecidos por Rentokil Initial Chile."
-    )
-    pdf.set_font("Arial", "", 10)
-    pdf.multi_cell(0, 6, conclusiones_texto)
-    pdf.ln(20)
-
-    # --- FIRMA (SOLO IMAGEN, SIN TEXTO REDUNDANTE) ---
-    ruta_firma_a_usar = None
-    if firma_file:
-        ruta_firma_a_usar = procesar_firma(firma_file)
-    elif os.path.exists('firma.png'):
-        ruta_firma_a_usar = 'firma.png'
         
-    if ruta_firma_a_usar:
-        try:
-            ancho_firma = 60
-            x_centro = (210 - ancho_firma) / 2
-            pdf.image(ruta_firma_a_usar, x=x_centro, w=ancho_firma)
-            
-            # Limpiar temporal
-            if firma_file and ruta_firma_a_usar != 'firma.png':
-                os.remove(ruta_firma_a_usar)
-        except: pass
-    
-    # YA NO SE ESCRIBE NINGÚN TEXTO DEBAJO
+        # 1. INFO
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(30, 6, "Cliente:", 0); pdf.cell(0, 6, str(cliente), 0, ln=1)
+        pdf.cell(30, 6, "Planta:", 0); pdf.cell(0, 6, f"{planta} - {direccion}", 0, ln=1)
+        pdf.cell(30, 6, "Atención:", 0); pdf.cell(0, 6, str(atencion), 0, ln=1)
+        pdf.cell(30, 6, "Fecha:", 0); pdf.cell(0, 6, str(fecha_inf), 0, ln=1)
+        
+        # 2. TECNICA
+        pdf.titulo_seccion("I", "SELLADO Y PLAGAS")
+        pdf.multi_cell(0, 6, f"Inspección de sellado: {'CONFORME' if sellado_ok else 'OBSERVADO'}. Plaga objetivo: {plaga}.")
+        pdf.titulo_seccion("II", "VOLÚMENES Y TIEMPOS")
+        pdf.multi_cell(0, 6, f"Volumen tratado: {volumen_total} m3. Tiempo de exposición: {horas_exp:.1f} horas.")
+        pdf.ln(2)
+        pdf.tabla_estilizada(["Evento", "Fecha", "Hora", "Total Horas"], [["Inyección", str(f_ini), str(h_ini), f"{horas_exp:.1f}"], ["Ventilación", str(f_ter), str(h_ter), "---"]], [45, 45, 45, 45])
+        
+        # 3. DOSIS
+        pdf.titulo_seccion("III", "DOSIFICACIÓN")
+        d_dosis = [[str(r['Piso']), str(r['Bandejas']), str(r['Mini-Ropes'])] for _, r in df_dosis.iterrows()]
+        d_dosis.append(["TOTALES", str(total_bandejas), str(total_ropes)])
+        pdf.tabla_estilizada(["Sector", "Bandejas", "Mini-Ropes"], d_dosis, [80, 50, 50])
+        
+        if fotos_dosis:
+            pdf.ln(2)
+            y_start = pdf.get_y()
+            for i, f in enumerate(fotos_dosis[:2]):
+                tmp_path = procesar_imagen_estilizada(f)
+                if tmp_path:
+                    try:
+                        x_pos = 10 if i == 0 else 105
+                        pdf.image(tmp_path, x=x_pos, y=y_start, w=85, h=60) 
+                        os.remove(tmp_path)
+                    except: pass
+            pdf.ln(65)
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
-        pdf.output(tmp_pdf.name)
-        with open(tmp_pdf.name, "rb") as f:
-            st.session_state.pdf_data = f.read()
-    st.rerun()
+        pdf.ln(2)
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(0, 8, f"DOSIS FINAL: {dosis_final:.2f} g/m3", ln=1, align="R")
+        
+        # 4. GRAFICO
+        pdf.add_page()
+        pdf.titulo_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)")
+        fig, ax = plt.subplots(figsize=(10, 5))
+        eje_x_labels = df_meds["Fecha"] + "\n" + df_meds["Hora"]
+        for col in df_meds.columns[2:]: 
+            ax.plot(eje_x_labels, pd.to_numeric(df_meds[col], errors='coerce'), marker='o', label=col)
+        ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal')
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False, fontsize='small')
+        plt.xticks(rotation=45, fontsize=8)
+        plt.subplots_adjust(top=0.85)
+        plt.tight_layout()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_graf:
+            fig.savefig(tmp_graf.name, dpi=300)
+            pdf.image(tmp_graf.name, x=10, w=190)
+        pdf.ln(5)
+        pdf.tabla_estilizada(["Fech", "Hr", "S", "P1", "P2", "P3", "P4", "P5"], [[str(x) for x in r] for _, r in df_meds.iterrows()], [25, 20, 20, 20, 20, 20, 20, 20])
+        
+        # 5. ANEXO FOTOGRAFICO
+        if fotos_anexo:
+            pdf.add_page()
+            pdf.titulo_seccion("V", "ANEXO FOTOGRÁFICO")
+            for i, f in enumerate(fotos_anexo):
+                tmp_path = procesar_imagen_estilizada(f)
+                if tmp_path:
+                    try:
+                        if pdf.get_y() > 200: 
+                            pdf.add_page(); pdf.set_y(20)
+                        y_act = pdf.get_y()
+                        if i % 2 == 0: pdf.image(tmp_path, x=10, y=y_act, w=90, h=65)
+                        else: pdf.image(tmp_path, x=110, y=y_act, w=90, h=65); pdf.ln(70)
+                        os.remove(tmp_path)
+                    except: pass
+
+        # 6. CONCLUSIONES
+        pdf.add_page()
+        pdf.titulo_seccion("VI", "CONCLUSIONES TÉCNICAS")
+        conclusiones_texto = (
+            f"De acuerdo con los registros monitoreados, se certifica que el tratamiento de fumigación "
+            f"en las instalaciones de {planta} se realizó cumpliendo un tiempo de exposición efectivo de "
+            f"{horas_exp:.1f} horas.\n\n"
+            f"El monitoreo de concentración de gas Fosfina (PH3) arrojó un promedio global de {promedio_ppm:.0f} PPM, "
+            f"manteniéndose en todo momento dentro de los rangos de eficacia requeridos para el control de "
+            f"{plaga}.\n\n"
+            f"Por lo anterior, el servicio se declara CONFORME, cumpliendo con los estándares de seguridad y "
+            f"calidad establecidos por Rentokil Initial Chile."
+        )
+        pdf.set_font("Arial", "", 10)
+        pdf.multi_cell(0, 6, conclusiones_texto)
+        pdf.ln(20)
+
+        # --- LÓGICA DE FIRMA CORREGIDA (SIN ERRORES) ---
+        ruta_firma_a_usar = None
+        
+        # CASO 1: Usuario subió firma nueva
+        if firma_file is not None:
+            ruta_firma_a_usar = procesar_firma(firma_file)
+            
+        # CASO 2: No subió nada, pero existe la firma default
+        elif os.path.exists('firma.png'):
+            ruta_firma_a_usar = 'firma.png'
+            
+        # Estampar si tenemos algo
+        if ruta_firma_a_usar:
+            try:
+                ancho_firma = 60
+                x_centro = (210 - ancho_firma) / 2
+                pdf.image(ruta_firma_a_usar, x=x_centro, w=ancho_firma)
+                
+                # Limpiar archivo temporal SOLO si es una firma nueva procesada
+                if firma_file is not None and ruta_firma_a_usar != 'firma.png':
+                    os.remove(ruta_firma_a_usar)
+            except: pass
+
+        # GUARDADO EN MEMORIA
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+            pdf.output(tmp_pdf.name)
+            with open(tmp_pdf.name, "rb") as f:
+                st.session_state.pdf_data = f.read()
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"❌ Ocurrió un error inesperado: {e}")
+        st.code(traceback.format_exc())
 
 if st.session_state.pdf_data:
     st.success("✅ Informe Generado Exitosamente")
