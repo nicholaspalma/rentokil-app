@@ -16,7 +16,7 @@ COLOR_TABLA_FILA = (255, 255, 255)
 
 # --- GESTIÓN DE ESTADO (MEMORIA) ---
 if "app_mode" not in st.session_state:
-    st.session_state.app_mode = "HOME" # Inicia en el Menú Principal
+    st.session_state.app_mode = "HOME"
 if "pdf_data" not in st.session_state:
     st.session_state.pdf_data = None
 
@@ -30,7 +30,7 @@ DATABASE_MOLINOS = {
     "MOLINO MAIPÚ": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "direccion": "Avenida Pajarito N° 1046, Maipú", "volumen": 4059}
 }
 
-DATABASE_ESTRUCTURAS_CLIENTES = {
+DATABASE_ESTRUCTURAS_EXTRA = {
     "MOLINO PUENTE ALTO": "Calle Balmaceda 27, Puente Alto, Santiago RM.",
     "CV TRADING": "Camino Valdivia de Paine S/N, Buin",
     "LDA SPA": "Ruta 5 sur Km 53, N°19200 Paine",
@@ -136,7 +136,7 @@ class PDF(FPDF):
 
 
 # ==============================================================================
-# PANTALLA DE INICIO (HOME) - MENÚ VISUAL
+# PANTALLA DE INICIO (HOME)
 # ==============================================================================
 if st.session_state.app_mode == "HOME":
     st.write(""); st.write("")
@@ -190,6 +190,7 @@ elif st.session_state.app_mode == "MOLINOS":
     horas_exp = (datetime.datetime.combine(f_ter, h_ter) - datetime.datetime.combine(f_ini, h_ini)).total_seconds() / 3600
 
     st.subheader("III. Distribución y Dosis")
+    # CORRECCIÓN ERROR: Forzar DataFrame
     df_dosis = st.data_editor(pd.DataFrame([
         {"Piso": "Subterráneo", "Bandejas": 10, "Mini-Ropes": 2},
         {"Piso": "Piso 1", "Bandejas": 10, "Mini-Ropes": 2},
@@ -197,7 +198,8 @@ elif st.session_state.app_mode == "MOLINOS":
         {"Piso": "Piso 3", "Bandejas": 10, "Mini-Ropes": 2},
         {"Piso": "Piso 4", "Bandejas": 8, "Mini-Ropes": 1},
         {"Piso": "Piso 5", "Bandejas": 5, "Mini-Ropes": 0},
-    ], columns=["Piso", "Bandejas", "Mini-Ropes"]), num_rows="dynamic", use_container_width=True)
+    ]), num_rows="dynamic", use_container_width=True)
+
     st.info("📷 Fotos dosificación (Página 1)")
     fotos_dosis = st.file_uploader("Subir evidencia dosis", accept_multiple_files=True, key="dosis_mol")
     
@@ -315,9 +317,23 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
     st.title("🏗️ Informe Estructuras (Nuevo)")
     
+    # 1. DATOS GENERALES (FUSIÓN DE CLIENTES)
     st.subheader("I. Datos Generales")
-    opcion_e = st.selectbox("Seleccione Cliente", list(DATABASE_ESTRUCTURAS_CLIENTES.keys()))
-    direccion_auto = DATABASE_ESTRUCTURAS_CLIENTES.get(opcion_e, "")
+    
+    # Combinamos Molinos + Clientes Extra para la lista
+    LISTA_CLIENTES_ESTR = list(DATABASE_MOLINOS.keys()) + list(DATABASE_ESTRUCTURAS_EXTRA.keys())
+    
+    opcion_e = st.selectbox("Seleccione Cliente", LISTA_CLIENTES_ESTR)
+    
+    # Lógica para obtener dirección automática dependiendo de donde venga el cliente
+    direccion_auto = ""
+    if opcion_e in DATABASE_MOLINOS:
+        # Si es un Molino de la base antigua
+        direccion_auto = DATABASE_MOLINOS[opcion_e]["direccion"]
+    elif opcion_e in DATABASE_ESTRUCTURAS_EXTRA:
+        # Si es un cliente nuevo de estructuras
+        direccion_auto = DATABASE_ESTRUCTURAS_EXTRA[opcion_e]
+    
     col_e1, col_e2 = st.columns(2)
     with col_e1:
         cliente_e = st.text_input("Nombre Cliente", opcion_e)
@@ -329,6 +345,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         if tipo_trat == "Curativo":
             plaga_e = st.text_input("Plaga de Almacenamiento (Curativo)", "Tribolium confusum")
 
+    # 2. LIMPIEZA
     st.subheader("II. Plan de Sellado y Limpieza")
     col_l1, col_l2 = st.columns(2)
     with col_l1:
@@ -342,11 +359,13 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     st.markdown("**📷 Evidencia de Limpieza / Suciedad (Item 2.1)**")
     fotos_limpieza = st.file_uploader("Subir fotos de limpieza", accept_multiple_files=True, key="fotos_limp")
 
+    # 3. DOSIS
     st.subheader("III. Volumen y Dosis (Cálculo Automático)")
-    df_struct_template = pd.DataFrame(columns=["Estructura (Nombre/N°)", "Volumen (m3)", "Cant. Placas", "Cant. Mini-Ropes", "Cant. Phostoxin"])
+    # CORRECCIÓN ERROR: Forzar DataFrame
     data_struct = [{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}]
-    df_estructuras = st.data_editor(data_struct, num_rows="dynamic", use_container_width=True)
+    df_estructuras = st.data_editor(pd.DataFrame(data_struct), num_rows="dynamic", use_container_width=True)
 
+    # 4. TIEMPOS Y MEDICIONES (CON NOMBRES PERSONALIZABLES)
     st.subheader("IV. Tiempos y Mediciones")
     col_t1, col_t2 = st.columns(2)
     with col_t1:
@@ -357,12 +376,28 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         h_ter_e = st.time_input("Hora Término", datetime.time(10, 0), key="ht_e")
     horas_exp_e = (datetime.datetime.combine(f_ter_e, h_ter_e) - datetime.datetime.combine(f_ini_e, h_ini_e)).total_seconds() / 3600
 
+    st.markdown("---")
+    st.markdown("**Configuración de Puntos de Medición**")
+    st.caption("Escriba el nombre real del punto (ej: 'Silo 3', 'Bin A') para que aparezca en el gráfico.")
+    
+    c_nombres = st.columns(5)
+    nombres_puntos = []
+    for i in range(5):
+        # Input para renombrar columna
+        nuevo_nombre = c_nombres[i].text_input(f"Nombre Punto {i+1}", f"Punto {i+1}", key=f"n_p_{i}")
+        nombres_puntos.append(nuevo_nombre)
+    
     st.markdown("**Registro de Concentraciones (PPM)**")
+    
+    # Crear DataFrame de mediciones con las columnas dinámicas
     data_med_est = []
     for i in range(3):
         f_str = (f_ini_e + datetime.timedelta(days=i)).strftime("%d-%m")
+        # Fila base: Fecha, Hora, y 5 ceros
         data_med_est.append([f_str, "10:00", 0, 0, 0, 0, 0])
-    df_med_est = st.data_editor(pd.DataFrame(data_med_est, columns=["Fecha", "Hora", "Punto 1", "Punto 2", "Punto 3", "Punto 4", "Punto 5"]), num_rows="dynamic", use_container_width=True)
+        
+    cols_totales = ["Fecha", "Hora"] + nombres_puntos
+    df_med_est = st.data_editor(pd.DataFrame(data_med_est, columns=cols_totales), num_rows="dynamic", use_container_width=True)
 
     st.markdown("**📷 Evidencia de Monitoreo / Equipos (Item 4)**")
     fotos_monitoreo = st.file_uploader("Subir fotos de mediciones", accept_multiple_files=True, key="fotos_mon")
@@ -381,12 +416,14 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             pdf.set_auto_page_break(auto=True, margin=15)
             pdf.add_page()
             
+            # 1. INFO
             pdf.set_font("Arial", "", 10)
             pdf.cell(30, 6, "Cliente:", 0); pdf.cell(0, 6, str(cliente_e), 0, ln=1)
             pdf.cell(30, 6, "Dirección:", 0); pdf.cell(0, 6, str(direccion_e), 0, ln=1)
             pdf.cell(30, 6, "Tratamiento:", 0); pdf.cell(0, 6, f"{tipo_trat} - Plaga: {plaga_e}", 0, ln=1)
             pdf.cell(30, 6, "Fecha:", 0); pdf.cell(0, 6, str(fecha_e), 0, ln=1)
             
+            # 2. LIMPIEZA
             pdf.titulo_seccion("I", "PLAN DE SELLADO Y LIMPIEZA")
             texto_limpieza = (
                 "Previo al inicio del tratamiento de fumigación, se solicitó la ejecución de un aseo minucioso de las áreas a tratar, "
@@ -405,10 +442,13 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             
             if fotos_limpieza: pdf.agregar_galeria_fotos(fotos_limpieza, titulo_opcional="Evidencia de Limpieza y Sellado:")
 
+            # 3. DOSIS
             pdf.titulo_seccion("II", "VOLUMEN Y DOSIFICACIÓN")
             header_dosis = ["Estructura", "Vol(m3)", "Plac", "Rope", "Phos", "Dosis g/m3"]
             data_dosis_pdf = []
             total_g = 0
+            
+            # ITERACIÓN CORREGIDA (Sobre DataFrame)
             for index, row in df_estructuras.iterrows():
                 try:
                     vol = float(row.get("Volumen (m3)", 0))
@@ -420,18 +460,24 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                     total_g += g_row
                     data_dosis_pdf.append([str(row.get("Estructura (Nombre/N°)", "")), f"{vol:.1f}", f"{int(n_pla)}", f"{int(n_rop)}", f"{int(n_pho)}", f"{dosis_row:.2f}"])
                 except: pass
+            
             pdf.tabla_estilizada(header_dosis, data_dosis_pdf, [55, 25, 20, 20, 20, 30])
             pdf.ln(2); pdf.set_font("Arial", "B", 10); pdf.cell(0, 6, f"Total Gas Generado: {total_g:.1f} gramos.", ln=1, align="R")
 
-            pdf.add_page(); pdf.titulo_seccion("III", "TIEMPOS Y MEDICIONES")
+            # 4. TIEMPOS Y MEDICIONES
+            pdf.add_page()
+            pdf.titulo_seccion("III", "TIEMPOS Y MEDICIONES")
             pdf.tabla_estilizada(["Evento", "Fecha", "Hora", "Total Horas"], [["Inicio", str(f_ini_e), str(h_ini_e), f"{horas_exp_e:.1f}"], ["Término", str(f_ter_e), str(h_ter_e), "---"]], [45, 45, 45, 45])
             
             pdf.ln(5)
             fig, ax = plt.subplots(figsize=(10, 5))
             eje_x = df_med_est["Fecha"] + "\n" + df_med_est["Hora"]
+            
+            # Graficar usando las columnas dinámicas (saltando Fecha y Hora)
             for col in df_med_est.columns[2:]: 
                 valores = pd.to_numeric(df_med_est[col], errors='coerce')
                 if valores.sum() > 0: ax.plot(eje_x, valores, marker='o', label=col)
+                
             ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
             ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=5, frameon=False, fontsize='small')
             plt.subplots_adjust(top=0.85); plt.tight_layout()
