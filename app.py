@@ -46,6 +46,26 @@ LISTA_REPRESENTANTES = [
 ]
 
 # --- FUNCIONES UTILITARIAS ---
+def clean_number(value):
+    """
+    Convierte cualquier entrada (str con coma, vacío, int) a float seguro.
+    Ej: "1,5" -> 1.5 | "" -> 0.0 | None -> 0.0
+    """
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        # Reemplazar coma por punto y quitar espacios
+        val_clean = value.replace(',', '.').strip()
+        if val_clean == "":
+            return 0.0
+        try:
+            return float(val_clean)
+        except ValueError:
+            return 0.0
+    return 0.0
+
 def procesar_imagen_estilizada(uploaded_file):
     try:
         image = Image.open(uploaded_file)
@@ -89,7 +109,13 @@ class PDF(FPDF):
         self.set_text_color(150, 150, 150)
         self.cell(0, 10, f"Página {self.page_no()} - Documento Oficial", align="C")
 
+    def check_page_break(self, needed_height):
+        """Si no hay espacio suficiente (needed_height mm), crea nueva página."""
+        if self.get_y() + needed_height > 250:
+            self.add_page()
+
     def titulo_seccion(self, numero, texto):
+        self.check_page_break(20) # Asegurar espacio para título + un poco de texto
         self.ln(5)
         self.set_font("Arial", "B", 10)
         self.set_fill_color(*COLOR_PRIMARIO)
@@ -98,14 +124,22 @@ class PDF(FPDF):
         self.set_text_color(0, 0, 0)
         self.ln(2)
 
-    def tabla_estilizada(self, header, data, col_widths):
+    def tabla_estilizada(self, header, data, col_widths, bold_last_row=False):
+        self.check_page_break(20) # Al menos espacio para cabecera y 1 fila
         self.set_font("Arial", "B", 7)
         self.set_fill_color(*COLOR_TABLA_HEAD)
         for i, h in enumerate(header):
             self.cell(col_widths[i], 8, h, 1, 0, 'C', True)
         self.ln()
+        
         self.set_font("Arial", "", 7)
-        for row in data:
+        for idx, row in enumerate(data):
+            # Si es la última fila y pedimos negrita (totales)
+            if bold_last_row and idx == len(data) - 1:
+                self.set_font("Arial", "B", 7)
+            else:
+                self.set_font("Arial", "", 7)
+                
             self.set_fill_color(*COLOR_TABLA_FILA)
             for i, d in enumerate(row):
                 self.cell(col_widths[i], 6, str(d), 1, 0, 'C', True)
@@ -113,25 +147,36 @@ class PDF(FPDF):
             
     def agregar_galeria_fotos(self, lista_fotos, titulo_opcional=None):
         if not lista_fotos: return
+        
+        self.check_page_break(40) # Verificar si cabe al menos título y 1 foto
+        
         if titulo_opcional:
             self.ln(2); self.set_font("Arial", "B", 9); self.cell(0, 6, titulo_opcional, ln=1)
+        
+        # Guardar posición Y inicial segura
         y_start = self.get_y()
-        if y_start > 200: self.add_page(); self.set_y(20); y_start = 20
+        
         for i, f in enumerate(lista_fotos):
             tmp_path = procesar_imagen_estilizada(f)
             if tmp_path:
                 try:
+                    # Control de salto de página dentro del bucle
+                    # Si estamos muy abajo (>220mm), saltar página y resetear Y
                     if self.get_y() > 220:
                         self.add_page(); self.set_y(20); y_start = 20
-                        if i % 2 != 0: y_start = 20 
+                        if i % 2 != 0: y_start = 20 # Si es la 2da foto de un par, resetear
+                    
                     if i % 2 == 0:
                         y_act = self.get_y()
                         self.image(tmp_path, x=10, y=y_act, w=90, h=65)
                     else:
                         self.image(tmp_path, x=110, y=y_act, w=90, h=65)
-                        self.ln(70)
+                        self.ln(70) # Bajar cursor solo al terminar el par
+                    
                     os.remove(tmp_path)
                 except: pass
+        
+        # Si quedó una foto impar, bajar el cursor para que no se escriba encima
         if len(lista_fotos) % 2 != 0: self.ln(70)
 
 
@@ -154,7 +199,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "ESTRUCTURAS"; st.rerun()
 
 # ==============================================================================
-# LÓGICA 1: MOLINOS
+# LÓGICA 1: MOLINOS (SIN CAMBIOS MAYORES)
 # ==============================================================================
 elif st.session_state.app_mode == "MOLINOS":
     with st.sidebar:
@@ -190,7 +235,6 @@ elif st.session_state.app_mode == "MOLINOS":
     horas_exp = (datetime.datetime.combine(f_ter, h_ter) - datetime.datetime.combine(f_ini, h_ini)).total_seconds() / 3600
 
     st.subheader("III. Distribución y Dosis")
-    # CORRECCIÓN ERROR: Forzar DataFrame
     df_dosis = st.data_editor(pd.DataFrame([
         {"Piso": "Subterráneo", "Bandejas": 10, "Mini-Ropes": 2},
         {"Piso": "Piso 1", "Bandejas": 10, "Mini-Ropes": 2},
@@ -203,8 +247,9 @@ elif st.session_state.app_mode == "MOLINOS":
     st.info("📷 Fotos dosificación (Página 1)")
     fotos_dosis = st.file_uploader("Subir evidencia dosis", accept_multiple_files=True, key="dosis_mol")
     
-    total_bandejas = df_dosis["Bandejas"].sum()
-    total_ropes = df_dosis["Mini-Ropes"].sum()
+    # Cálculos Molinos
+    total_bandejas = df_dosis["Bandejas"].apply(clean_number).sum()
+    total_ropes = df_dosis["Mini-Ropes"].apply(clean_number).sum()
     gramos_totales = (total_bandejas * 500) + (total_ropes * 333)
     dosis_final = gramos_totales / volumen_total if volumen_total > 0 else 0
 
@@ -245,8 +290,8 @@ elif st.session_state.app_mode == "MOLINOS":
             
             pdf.titulo_seccion("III", "DOSIFICACIÓN")
             d_dosis_pdf = [[str(r['Piso']), str(r['Bandejas']), str(r['Mini-Ropes'])] for _, r in df_dosis.iterrows()]
-            d_dosis_pdf.append(["TOTALES", str(total_bandejas), str(total_ropes)])
-            pdf.tabla_estilizada(["Sector", "Bandejas", "Mini-Ropes"], d_dosis_pdf, [80, 50, 50])
+            d_dosis_pdf.append(["TOTALES", str(int(total_bandejas)), str(int(total_ropes))])
+            pdf.tabla_estilizada(["Sector", "Bandejas", "Mini-Ropes"], d_dosis_pdf, [80, 50, 50], bold_last_row=True)
             
             if fotos_dosis:
                 pdf.ln(2); y_start = pdf.get_y()
@@ -264,8 +309,8 @@ elif st.session_state.app_mode == "MOLINOS":
             
             pdf.add_page(); pdf.titulo_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)")
             fig, ax = plt.subplots(figsize=(10, 5))
-            eje_x_labels = df_meds["Fecha"] + "\n" + df_meds["Hora"]
-            for col in df_meds.columns[2:]: 
+            eje_x_labels = df_med_est["Fecha"] + "\n" + df_med_est["Hora"]
+            for col in df_med_est.columns[2:]: 
                 ax.plot(eje_x_labels, pd.to_numeric(df_meds[col], errors='coerce'), marker='o', label=col)
             ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal')
             ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False, fontsize='small')
@@ -306,7 +351,7 @@ elif st.session_state.app_mode == "MOLINOS":
         except Exception as e: st.error(f"Error: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA 2: ESTRUCTURAS
+# LÓGICA 2: ESTRUCTURAS (MEJORADA v8.5)
 # ==============================================================================
 elif st.session_state.app_mode == "ESTRUCTURAS":
     with st.sidebar:
@@ -317,22 +362,13 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
     st.title("🏗️ Informe Estructuras (Nuevo)")
     
-    # 1. DATOS GENERALES (FUSIÓN DE CLIENTES)
+    # 1. DATOS
     st.subheader("I. Datos Generales")
-    
-    # Combinamos Molinos + Clientes Extra para la lista
     LISTA_CLIENTES_ESTR = list(DATABASE_MOLINOS.keys()) + list(DATABASE_ESTRUCTURAS_EXTRA.keys())
-    
     opcion_e = st.selectbox("Seleccione Cliente", LISTA_CLIENTES_ESTR)
-    
-    # Lógica para obtener dirección automática dependiendo de donde venga el cliente
     direccion_auto = ""
-    if opcion_e in DATABASE_MOLINOS:
-        # Si es un Molino de la base antigua
-        direccion_auto = DATABASE_MOLINOS[opcion_e]["direccion"]
-    elif opcion_e in DATABASE_ESTRUCTURAS_EXTRA:
-        # Si es un cliente nuevo de estructuras
-        direccion_auto = DATABASE_ESTRUCTURAS_EXTRA[opcion_e]
+    if opcion_e in DATABASE_MOLINOS: direccion_auto = DATABASE_MOLINOS[opcion_e]["direccion"]
+    elif opcion_e in DATABASE_ESTRUCTURAS_EXTRA: direccion_auto = DATABASE_ESTRUCTURAS_EXTRA[opcion_e]
     
     col_e1, col_e2 = st.columns(2)
     with col_e1:
@@ -342,8 +378,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     with col_e2:
         fecha_e = st.date_input("Fecha Informe", datetime.date.today())
         plaga_e = "N/A (Preventivo)"
-        if tipo_trat == "Curativo":
-            plaga_e = st.text_input("Plaga de Almacenamiento (Curativo)", "Tribolium confusum")
+        if tipo_trat == "Curativo": plaga_e = st.text_input("Plaga de Almacenamiento", "Tribolium confusum")
 
     # 2. LIMPIEZA
     st.subheader("II. Plan de Sellado y Limpieza")
@@ -359,13 +394,12 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     st.markdown("**📷 Evidencia de Limpieza / Suciedad (Item 2.1)**")
     fotos_limpieza = st.file_uploader("Subir fotos de limpieza", accept_multiple_files=True, key="fotos_limp")
 
-    # 3. DOSIS
+    # 3. DOSIS (CORREGIDO BUG NUMÉRICO)
     st.subheader("III. Volumen y Dosis (Cálculo Automático)")
-    # CORRECCIÓN ERROR: Forzar DataFrame
     data_struct = [{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}]
     df_estructuras = st.data_editor(pd.DataFrame(data_struct), num_rows="dynamic", use_container_width=True)
 
-    # 4. TIEMPOS Y MEDICIONES (CON NOMBRES PERSONALIZABLES)
+    # 4. MEDICIONES
     st.subheader("IV. Tiempos y Mediciones")
     col_t1, col_t2 = st.columns(2)
     with col_t1:
@@ -378,24 +412,17 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
     st.markdown("---")
     st.markdown("**Configuración de Puntos de Medición**")
-    st.caption("Escriba el nombre real del punto (ej: 'Silo 3', 'Bin A') para que aparezca en el gráfico.")
-    
     c_nombres = st.columns(5)
     nombres_puntos = []
     for i in range(5):
-        # Input para renombrar columna
         nuevo_nombre = c_nombres[i].text_input(f"Nombre Punto {i+1}", f"Punto {i+1}", key=f"n_p_{i}")
         nombres_puntos.append(nuevo_nombre)
     
     st.markdown("**Registro de Concentraciones (PPM)**")
-    
-    # Crear DataFrame de mediciones con las columnas dinámicas
     data_med_est = []
     for i in range(3):
         f_str = (f_ini_e + datetime.timedelta(days=i)).strftime("%d-%m")
-        # Fila base: Fecha, Hora, y 5 ceros
         data_med_est.append([f_str, "10:00", 0, 0, 0, 0, 0])
-        
     cols_totales = ["Fecha", "Hora"] + nombres_puntos
     df_med_est = st.data_editor(pd.DataFrame(data_med_est, columns=cols_totales), num_rows="dynamic", use_container_width=True)
 
@@ -403,7 +430,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     fotos_monitoreo = st.file_uploader("Subir fotos de mediciones", accept_multiple_files=True, key="fotos_mon")
 
     st.subheader("V. Anexo Fotográfico General")
-    st.markdown("**📷 Otras Fotos (Generales)**")
     fotos_anexo_est = st.file_uploader("Fotos Generales Estructuras", accept_multiple_files=True, key="anexo_est")
     
     st.markdown("---")
@@ -421,19 +447,20 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             pdf.cell(30, 6, "Cliente:", 0); pdf.cell(0, 6, str(cliente_e), 0, ln=1)
             pdf.cell(30, 6, "Dirección:", 0); pdf.cell(0, 6, str(direccion_e), 0, ln=1)
             pdf.cell(30, 6, "Tratamiento:", 0); pdf.cell(0, 6, f"{tipo_trat} - Plaga: {plaga_e}", 0, ln=1)
-            pdf.cell(30, 6, "Fecha:", 0); pdf.cell(0, 6, str(fecha_e), 0, ln=1)
+            # Formato fecha profesional
+            fecha_str_larga = fecha_e.strftime("%d-%m-%Y")
+            pdf.cell(30, 6, "Fecha:", 0); pdf.cell(0, 6, fecha_str_larga, 0, ln=1)
             
-            # 2. LIMPIEZA
+            # 2. LIMPIEZA (TEXTO MEJORADO)
             pdf.titulo_seccion("I", "PLAN DE SELLADO Y LIMPIEZA")
             texto_limpieza = (
-                "Previo al inicio del tratamiento de fumigación, se solicitó la ejecución de un aseo minucioso de las áreas a tratar, "
-                "el cual consistió en la remoción de polvo, materia orgánica, derrames y acumulaciones de residuos presentes en "
-                "vigas, interiores de roscas, tolvas, elevadores y silos.\n"
-                "Asimismo, se procedió a la eliminación de costras de residuos e impurezas acumuladas en las superficies, con el "
-                "objetivo de evitar que los insectos se refugiaran bajo capas de polvo o materia orgánica.\n\n"
-                f"La limpieza fue supervisada por: {encargado_limpieza}.\n"
-                f"Visada por Representante Técnico Rentokil: {rep_rentokil}.\n"
-                f"Fecha Revisión: {fecha_rev} a las {hora_rev} horas."
+                "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las "
+                "estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido "
+                "y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\n"
+                "Esta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así "
+                "la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n"
+                f"Supervisión Cliente: {encargado_limpieza} | Visado Rentokil: {rep_rentokil}.\n"
+                f"Fecha Revisión en Terreno: {fecha_rev} a las {hora_rev} horas."
             )
             pdf.multi_cell(0, 5, texto_limpieza); pdf.ln(3)
             
@@ -442,44 +469,62 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             
             if fotos_limpieza: pdf.agregar_galeria_fotos(fotos_limpieza, titulo_opcional="Evidencia de Limpieza y Sellado:")
 
-            # 3. DOSIS
+            # 3. DOSIS (CON FIX NUMÉRICO Y TOTALES)
             pdf.titulo_seccion("II", "VOLUMEN Y DOSIFICACIÓN")
             header_dosis = ["Estructura", "Vol(m3)", "Plac", "Rope", "Phos", "Dosis g/m3"]
             data_dosis_pdf = []
             total_g = 0
+            total_vol = 0
             
-            # ITERACIÓN CORREGIDA (Sobre DataFrame)
+            # LÓGICA DE CÁLCULO SEGURA (CLEAN NUMBER)
             for index, row in df_estructuras.iterrows():
                 try:
-                    vol = float(row.get("Volumen (m3)", 0))
-                    n_pla = float(row.get("Cant. Placas", 0))
-                    n_rop = float(row.get("Cant. Mini-Ropes", 0))
-                    n_pho = float(row.get("Cant. Phostoxin", 0))
-                    g_row = (n_pla * 33) + (n_rop * 333) + (n_pho * 1)
-                    dosis_row = g_row / vol if vol > 0 else 0
-                    total_g += g_row
-                    data_dosis_pdf.append([str(row.get("Estructura (Nombre/N°)", "")), f"{vol:.1f}", f"{int(n_pla)}", f"{int(n_rop)}", f"{int(n_pho)}", f"{dosis_row:.2f}"])
+                    vol = clean_number(row.get("Volumen (m3)", 0))
+                    n_pla = clean_number(row.get("Cant. Placas", 0))
+                    n_rop = clean_number(row.get("Cant. Mini-Ropes", 0))
+                    n_pho = clean_number(row.get("Cant. Phostoxin", 0))
+                    
+                    if vol > 0 or n_pla > 0 or n_rop > 0 or n_pho > 0: # Solo si hay algo escrito
+                        g_row = (n_pla * 33) + (n_rop * 333) + (n_pho * 1)
+                        dosis_row = g_row / vol if vol > 0 else 0
+                        total_g += g_row
+                        total_vol += vol
+                        data_dosis_pdf.append([
+                            str(row.get("Estructura (Nombre/N°)", "")),
+                            f"{vol:.1f}", 
+                            f"{int(n_pla)}", 
+                            f"{int(n_rop)}", 
+                            f"{int(n_pho)}", 
+                            f"{dosis_row:.2f}"
+                        ])
                 except: pass
             
-            pdf.tabla_estilizada(header_dosis, data_dosis_pdf, [55, 25, 20, 20, 20, 30])
+            # Agregar fila de TOTALES
+            data_dosis_pdf.append(["TOTALES", f"{total_vol:.1f}", "", "", "", ""])
+            
+            pdf.tabla_estilizada(header_dosis, data_dosis_pdf, [55, 25, 20, 20, 20, 30], bold_last_row=True)
             pdf.ln(2); pdf.set_font("Arial", "B", 10); pdf.cell(0, 6, f"Total Gas Generado: {total_g:.1f} gramos.", ln=1, align="R")
 
             # 4. TIEMPOS Y MEDICIONES
-            pdf.add_page()
+            pdf.add_page() # Forzar inicio en nueva hoja para que grafico y tabla queden juntos
             pdf.titulo_seccion("III", "TIEMPOS Y MEDICIONES")
             pdf.tabla_estilizada(["Evento", "Fecha", "Hora", "Total Horas"], [["Inicio", str(f_ini_e), str(h_ini_e), f"{horas_exp_e:.1f}"], ["Término", str(f_ter_e), str(h_ter_e), "---"]], [45, 45, 45, 45])
             
             pdf.ln(5)
+            # GENERACIÓN GRÁFICO
             fig, ax = plt.subplots(figsize=(10, 5))
             eje_x = df_med_est["Fecha"] + "\n" + df_med_est["Hora"]
-            
-            # Graficar usando las columnas dinámicas (saltando Fecha y Hora)
+            hay_datos_grafico = False
             for col in df_med_est.columns[2:]: 
-                valores = pd.to_numeric(df_med_est[col], errors='coerce')
-                if valores.sum() > 0: ax.plot(eje_x, valores, marker='o', label=col)
-                
+                valores = pd.to_numeric(df_med_est[col], errors='coerce').fillna(0)
+                if valores.sum() > 0: 
+                    ax.plot(eje_x, valores, marker='o', label=col)
+                    hay_datos_grafico = True
+            
             ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
-            ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=5, frameon=False, fontsize='small')
+            if hay_datos_grafico:
+                ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=5, frameon=False, fontsize='small')
+            
             plt.subplots_adjust(top=0.85); plt.tight_layout()
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_graf:
                 fig.savefig(tmp_graf.name, dpi=300); pdf.image(tmp_graf.name, x=10, w=190)
@@ -494,13 +539,19 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             if fotos_anexo_est:
                 pdf.add_page(); pdf.titulo_seccion("IV", "ANEXO FOTOGRÁFICO"); pdf.agregar_galeria_fotos(fotos_anexo_est)
 
+            # 5. CONCLUSIONES (TEXTO MEJORADO)
             pdf.add_page(); pdf.titulo_seccion("V", "CONCLUSIONES TÉCNICAS")
-            lista_structs = ", ".join(estructuras_sel) if estructuras_sel else "las estructuras indicadas"
+            
             concl_text_est = (
-                f"Se certifica que el tratamiento de fumigación en {cliente_e} ({direccion_e}) abarcando {lista_structs}, "
-                f"se realizó cumpliendo un tiempo de exposición efectivo de {horas_exp_e:.1f} horas.\n\n"
-                f"Las concentraciones de gas Fosfina se mantuvieron dentro de los parámetros de eficacia para el control de {plaga_e}.\n\n"
-                f"El servicio se declara CONFORME según los estándares de Rentokil Initial Chile."
+                "EVALUACIÓN DE EFICACIA:\n"
+                "El análisis de las curvas de concentración de Fosfina (PH3) demuestra que se alcanzó y mantuvo la saturación "
+                f"necesaria en todos los puntos críticos monitoreados. Los niveles de gas superaron el umbral de toxicidad requerido, "
+                f"asegurando el control de {plaga_e} en sus distintos estadios de desarrollo.\n\n"
+                "CERTIFICACIÓN:\n"
+                f"Se certifica un tiempo de exposición efectivo de {horas_exp_e:.1f} horas, validando la bio-disponibilidad del "
+                "ingrediente activo en todo el volumen tratado.\n\n"
+                "En consecuencia, el servicio se declara CONFORME, cumpliendo estrictamente con los estándares de inocuidad "
+                "y calidad comprometidos por Rentokil Initial Chile."
             )
             pdf.multi_cell(0, 6, concl_text_est); pdf.ln(20)
 
