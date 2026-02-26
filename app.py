@@ -139,51 +139,31 @@ class PDF(FPDF):
 # PANTALLA DE INICIO (HOME) - MENÚ VISUAL
 # ==============================================================================
 if st.session_state.app_mode == "HOME":
-    
-    # Espaciado para centrar visualmente
-    st.write("")
-    st.write("")
-    
-    # Logo Grande
+    st.write(""); st.write("")
     col_logo1, col_logo2, col_logo3 = st.columns([1,2,1])
     with col_logo2:
-        if os.path.exists("logo.png"):
-            st.image("logo.png", use_container_width=True)
+        if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
         st.markdown("<h2 style='text-align: center;'>Seleccione Tipo de Informe</h2>", unsafe_allow_html=True)
-    
     st.write("")
-    
-    # BOTONES GRANDES
     c1, c2 = st.columns(2)
-    
     with c1:
-        # Botón Molinos
         if st.button("🏭 FUMIGACIÓN MOLINOS\n(Clic para iniciar)", use_container_width=True, type="primary"):
-            st.session_state.app_mode = "MOLINOS"
-            st.rerun()
-            
+            st.session_state.app_mode = "MOLINOS"; st.rerun()
     with c2:
-        # Botón Estructuras
         if st.button("🏗️ FUMIGACIÓN ESTRUCTURAS\n(Clic para iniciar)", use_container_width=True, type="primary"):
-            st.session_state.app_mode = "ESTRUCTURAS"
-            st.rerun()
+            st.session_state.app_mode = "ESTRUCTURAS"; st.rerun()
 
 # ==============================================================================
 # LÓGICA 1: MOLINOS
 # ==============================================================================
 elif st.session_state.app_mode == "MOLINOS":
-    
-    # Barra lateral con botón de volver
     with st.sidebar:
         st.image("logo.png", width=120) if os.path.exists("logo.png") else None
         if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True):
-            st.session_state.app_mode = "HOME"
-            st.rerun()
-        st.markdown("---")
-        st.info("Modo: Molinos")
+            st.session_state.app_mode = "HOME"; st.rerun()
+        st.markdown("---"); st.info("Modo: Molinos")
 
     st.title("🏭 Informe Molinos (Tradicional)")
-    
     st.subheader("I. Datos Generales")
     opcion = st.selectbox("Seleccione Planta", list(DATABASE_MOLINOS.keys()) + ["OTRO"])
     d = DATABASE_MOLINOS.get(opcion, {"cliente": "", "direccion": "", "volumen": 0})
@@ -317,7 +297,9 @@ elif st.session_state.app_mode == "MOLINOS":
                 except: pass
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
-                pdf.output(tmp_pdf.name); with open(tmp_pdf.name, "rb") as f: st.session_state.pdf_data = f.read()
+                pdf.output(tmp_pdf.name)
+                with open(tmp_pdf.name, "rb") as f:
+                    st.session_state.pdf_data = f.read()
             st.rerun()
         except Exception as e: st.error(f"Error: {e}"); st.code(traceback.format_exc())
 
@@ -325,14 +307,11 @@ elif st.session_state.app_mode == "MOLINOS":
 # LÓGICA 2: ESTRUCTURAS
 # ==============================================================================
 elif st.session_state.app_mode == "ESTRUCTURAS":
-    
     with st.sidebar:
         st.image("logo.png", width=120) if os.path.exists("logo.png") else None
         if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True):
-            st.session_state.app_mode = "HOME"
-            st.rerun()
-        st.markdown("---")
-        st.info("Modo: Estructuras")
+            st.session_state.app_mode = "HOME"; st.rerun()
+        st.markdown("---"); st.info("Modo: Estructuras")
 
     st.title("🏗️ Informe Estructuras (Nuevo)")
     
@@ -489,7 +468,9 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 except: pass
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
-                pdf.output(tmp_pdf.name); with open(tmp_pdf.name, "rb") as f: st.session_state.pdf_data = f.read()
+                pdf.output(tmp_pdf.name)
+                with open(tmp_pdf.name, "rb") as f:
+                    st.session_state.pdf_data = f.read()
             st.rerun()
             
         except Exception as e: st.error(f"Error: {e}"); st.code(traceback.format_exc())
