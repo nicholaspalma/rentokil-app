@@ -123,7 +123,6 @@ class PDF(FPDF):
         self.cell(0, 10, f"Página {self.page_no()} - Documento Oficial", align="C")
 
     def check_page_break(self, needed_height):
-        # Umbral de seguridad (250mm es aprox el límite antes del footer)
         if self.get_y() + needed_height > 250:
             self.add_page()
 
@@ -151,7 +150,6 @@ class PDF(FPDF):
                 self.set_font("Arial", "B", 7)
             else:
                 self.set_font("Arial", "", 7)
-                
             self.set_fill_color(*COLOR_TABLA_FILA)
             for i, d in enumerate(row):
                 self.cell(col_widths[i], 6, str(d), 1, 0, 'C', True)
@@ -159,8 +157,6 @@ class PDF(FPDF):
             
     def agregar_galeria_fotos(self, lista_fotos, titulo_opcional=None):
         if not lista_fotos: return
-        
-        # Verificar espacio para título
         self.check_page_break(20)
         
         if titulo_opcional:
@@ -169,36 +165,29 @@ class PDF(FPDF):
             self.cell(0, 6, titulo_opcional, ln=1)
         
         y_start = self.get_y()
-        
         for i, f in enumerate(lista_fotos):
             tmp_path = procesar_imagen_estilizada(f)
             if tmp_path:
                 try:
-                    # CORRECCIÓN CLAVE: Si queda poco espacio (menos de 80mm), nueva página
                     if self.get_y() > 210:
                         self.add_page()
-                        # CORRECCIÓN CLAVE: Bajar cursor a 45 para NO TAPAR EL LOGO
-                        self.set_y(45) 
+                        self.set_y(45)
                         y_start = 45
-                        # Si es la segunda foto del par, reiniciar para que empiece en la nueva hoja
                         if i % 2 != 0: y_start = 45 
                     
                     if i % 2 == 0:
                         y_act = self.get_y()
                         self.image(tmp_path, x=10, y=y_act, w=90, h=65)
                     else:
-                        # Usar la misma Y que la foto izquierda
                         self.image(tmp_path, x=110, y=y_act, w=90, h=65)
-                        self.ln(70) # Bajar cursor después del par
+                        self.ln(70)
                     os.remove(tmp_path)
                 except: pass
-                
-        # Si quedó una foto impar, bajar el cursor
         if len(lista_fotos) % 2 != 0: self.ln(70)
 
 
 # ==============================================================================
-# PANTALLA DE INICIO (HOME)
+# PANTALLA DE INICIO
 # ==============================================================================
 if st.session_state.app_mode == "HOME":
     st.write("")
@@ -343,7 +332,6 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.add_page()
             pdf.titulo_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)")
             fig, ax = plt.subplots(figsize=(10, 5))
-            # FIX: Convertir a string
             eje_x_labels = df_meds["Fecha"].astype(str) + "\n" + df_meds["Hora"].astype(str)
             for col in df_meds.columns[2:]: 
                 ax.plot(eje_x_labels, pd.to_numeric(df_meds[col], errors='coerce'), marker='o', label=col)
@@ -436,6 +424,12 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         hora_rev = st.time_input("Hora Revisión", datetime.time(10, 0))
     estructuras_sel = st.multiselect("Estructuras a tratar", ["Silos", "Tolvas", "Roscas", "Elevadores", "Pozos", "Ductos Descarga", "Ductos Carga", "Pavos", "Ductos Aspiración", "Celdas"])
     
+    # --- GATILLO OBSERVACIONES (CAMBIO SOLICITADO) ---
+    hay_observaciones = st.checkbox("⚠️ ¿Agregar observaciones de limpieza/mejoras?")
+    texto_observaciones = ""
+    if hay_observaciones:
+        texto_observaciones = st.text_area("Describa los hallazgos o mejoras:", height=80, placeholder="Ej: Se detectó acumulación de polvo en cúpula de Silo 2...")
+    
     # FOTOS LIMPIEZA
     st.markdown("**📷 Evidencia de Limpieza / Sellado (Item 2.1)**")
     fotos_limpieza = st.file_uploader("Subir fotos sellado/limpieza", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'heic'], key="fotos_limp")
@@ -524,6 +518,18 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             )
             pdf.multi_cell(0, 5, texto_limpieza)
             pdf.ln(3)
+            
+            # --- IMPRIMIR OBSERVACIONES (SI EXISTEN) ---
+            if hay_observaciones and texto_observaciones:
+                pdf.set_font("Arial", "B", 9)
+                pdf.set_text_color(200, 0, 0)
+                pdf.cell(0, 6, "OBSERVACIONES / OPORTUNIDADES DE MEJORA DETECTADAS:", ln=1)
+                pdf.set_text_color(0, 0, 0)
+                pdf.set_font("Arial", "", 9)
+                pdf.multi_cell(0, 5, texto_observaciones)
+                pdf.ln(3)
+            # -------------------------------------------
+
             est_str = ", ".join(estructuras_sel) if estructuras_sel else "No especificadas"
             pdf.set_font("Arial", "B", 9)
             pdf.cell(0, 6, f"Estructuras intervenidas: {est_str}", ln=1)
@@ -599,14 +605,21 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 pdf.titulo_seccion("IV", "ANEXO FOTOGRÁFICO")
                 pdf.agregar_galeria_fotos(fotos_anexo_est)
 
-            # 6. CONCLUSIONES
+            # 6. CONCLUSIONES (TEXTO INTELIGENTE)
             pdf.add_page()
             pdf.titulo_seccion("V", "CONCLUSIONES TÉCNICAS")
+            
+            # Lógica de texto según tipo
+            if tipo_trat == "Preventivo":
+                texto_eficacia = "asegurando una acción profiláctica eficaz contra posibles vectores y eliminando focos de infestación no visibles, resguardando la inocuidad de la planta."
+            else:
+                texto_eficacia = f"asegurando el control de {plaga_e} en sus distintos estadios de desarrollo."
+
             concl_text_est = (
                 "EVALUACIÓN DE EFICACIA:\n"
                 "El análisis de las curvas de concentración de Fosfina (PH3) demuestra que se alcanzó y mantuvo la saturación "
                 f"necesaria en todos los puntos críticos monitoreados. Los niveles de gas superaron el umbral de toxicidad requerido, "
-                f"asegurando el control de {plaga_e} en sus distintos estadios de desarrollo.\n\n"
+                f"{texto_eficacia}\n\n"
                 "CERTIFICACIÓN:\n"
                 f"Se certifica un tiempo de exposición efectivo de {horas_exp_e:.1f} horas, validando la bio-disponibilidad del "
                 "ingrediente activo en todo el volumen tratado.\n\n"
@@ -631,7 +644,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 with open(tmp_pdf.name, "rb") as f:
                     st.session_state.pdf_data = f.read()
             st.rerun()
-            
         except Exception as e: st.error(f"Error: {e}"); st.code(traceback.format_exc())
 
 # BOTÓN FINAL
