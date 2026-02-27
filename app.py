@@ -5,8 +5,19 @@ from fpdf import FPDF
 import datetime
 import os
 import tempfile
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFile
 import traceback
+import gc # Garbage Collector para limpiar memoria RAM
+
+# --- CONFIGURACIÓN PARA IMÁGENES ROTAS O TRUNCADAS ---
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+# --- INTENTAR IMPORTAR SOPORTE HEIC (IPHONE) ---
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass # Si no está instalado, intentará seguir igual
 
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(layout="wide", page_title="Rentokil Mobile PRO")
@@ -58,32 +69,44 @@ def clean_number(value):
 
 def procesar_imagen_estilizada(uploaded_file):
     """
-    Versión OPTIMIZADA PARA MÓVIL: Reduce tamaño antes de procesar
-    para evitar errores de memoria RAM.
+    Versión ULTIMATE para Móvil:
+    1. Soporta HEIC/JPG/PNG.
+    2. Comprime antes de procesar para no saturar RAM.
+    3. Corrige rotación.
     """
     try:
+        # Abrir imagen (Pillow-heif maneja HEIC automático aquí)
         image = Image.open(uploaded_file)
         
-        # 1. REDUCCIÓN DE TAMAÑO PREVENTIVA (Anti-Crash Memoria)
-        # Si la imagen es gigante (ej: 4000px), la bajamos a 1200px máx
-        image.thumbnail((1200, 1200)) 
-        
-        # 2. Corregir rotación (EXIF)
+        # Corrección inmediata de orientación (Celulares toman fotos rotadas)
         image = ImageOps.exif_transpose(image)
         
-        # 3. Asegurar RGB
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
+        # Convertir a RGB (Elimina problemas de transparencia o CMYK)
+        if image.mode in ("RGBA", "P", "CMYK"):
+            image = image.convert("RGB")
             
-        # 4. Recorte Final 4:3 (800x600)
+        # Reducir tamaño drásticamente si es muy grande (Anti-Crash RAM)
+        # Si el ancho es mayor a 1200px, redimensionar manteniendo proporción
+        if image.width > 1200:
+            ratio = 1200 / float(image.width)
+            new_height = int((float(image.height) * float(ratio)))
+            image = image.resize((1200, new_height), Image.Resampling.LANCZOS)
+
+        # Recorte final 4:3 (800x600) para el informe
         image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS)
         
+        # Guardar en temporal comprimido
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        image_fixed.save(tmp.name, format='JPEG', quality=85)
+        image_fixed.save(tmp.name, format='JPEG', quality=85, optimize=True)
+        
+        # Limpiar memoria
+        image.close()
+        del image
+        gc.collect()
+        
         return tmp.name
     except Exception as e:
-        # Mostrar error en pantalla para saber qué pasó
-        st.error(f"⚠️ Error procesando imagen {uploaded_file.name}: {e}")
+        print(f"Error procesando imagen: {e}")
         return None
 
 def procesar_firma(uploaded_file):
@@ -163,9 +186,7 @@ class PDF(FPDF):
         
         y_start = self.get_y()
         for i, f in enumerate(lista_fotos):
-            # Procesar
             tmp_path = procesar_imagen_estilizada(f)
-            
             if tmp_path:
                 try:
                     if self.get_y() > 220:
@@ -181,13 +202,12 @@ class PDF(FPDF):
                         self.image(tmp_path, x=110, y=y_act, w=90, h=65)
                         self.ln(70)
                     os.remove(tmp_path)
-                except Exception as e:
-                    st.error(f"Error pegando foto en PDF: {e}")
+                except: pass
         if len(lista_fotos) % 2 != 0: self.ln(70)
 
 
 # ==============================================================================
-# PANTALLA DE INICIO (HOME)
+# PANTALLA DE INICIO
 # ==============================================================================
 if st.session_state.app_mode == "HOME":
     st.write("")
@@ -258,7 +278,7 @@ elif st.session_state.app_mode == "MOLINOS":
     st.info("📷 Fotos dosificación (Página 1)")
     fotos_dosis = st.file_uploader("Subir evidencia dosis", accept_multiple_files=True, key="dosis_mol")
     if fotos_dosis:
-        st.success(f"✅ {len(fotos_dosis)} fotos cargadas correctamente.")
+        st.success(f"✅ {len(fotos_dosis)} fotos recibidas.")
     
     total_bandejas = df_dosis["Bandejas"].apply(clean_number).sum()
     total_ropes = df_dosis["Mini-Ropes"].apply(clean_number).sum()
@@ -278,7 +298,7 @@ elif st.session_state.app_mode == "MOLINOS":
     st.subheader("V. Anexo Fotográfico")
     fotos_anexo = st.file_uploader("Fotos Generales", accept_multiple_files=True, key="anexo_mol")
     if fotos_anexo:
-        st.success(f"✅ {len(fotos_anexo)} fotos cargadas correctamente.")
+        st.success(f"✅ {len(fotos_anexo)} fotos recibidas.")
 
     st.markdown("---")
     st.subheader("✍️ Firma Supervisor")
@@ -382,7 +402,7 @@ elif st.session_state.app_mode == "MOLINOS":
         except Exception as e: st.error(f"Error: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA 2: ESTRUCTURAS
+# LÓGICA 2: ESTRUCTURAS (v9.0 - MULTI-CARGA + HEIC FIX)
 # ==============================================================================
 elif st.session_state.app_mode == "ESTRUCTURAS":
     with st.sidebar:
@@ -426,8 +446,8 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     
     # FOTOS LIMPIEZA
     st.markdown("**📷 Evidencia de Limpieza / Sellado (Item 2.1)**")
-    fotos_limpieza = st.file_uploader("Subir fotos sellado/limpieza", accept_multiple_files=True, key="fotos_limp")
-    if fotos_limpieza: st.success(f"✅ {len(fotos_limpieza)} fotos cargadas.")
+    fotos_limpieza = st.file_uploader("Subir fotos sellado/limpieza", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'heic'], key="fotos_limp")
+    if fotos_limpieza: st.success(f"✅ {len(fotos_limpieza)} fotos recibidas.")
 
     # 3. DOSIS
     st.subheader("III. Volumen y Dosis (Cálculo Automático)")
@@ -436,8 +456,8 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     
     # FOTOS DOSIS
     st.markdown("**📷 Evidencia de Dosificación (Insumos aplicados)**")
-    fotos_dosis_est = st.file_uploader("Subir fotos dosificación", accept_multiple_files=True, key="fotos_dosis_est")
-    if fotos_dosis_est: st.success(f"✅ {len(fotos_dosis_est)} fotos cargadas.")
+    fotos_dosis_est = st.file_uploader("Subir fotos dosificación", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'heic'], key="fotos_dosis_est")
+    if fotos_dosis_est: st.success(f"✅ {len(fotos_dosis_est)} fotos recibidas.")
 
     # 4. MEDICIONES
     st.subheader("IV. Tiempos y Mediciones")
@@ -468,18 +488,18 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
     # FOTOS MEDICIONES
     st.markdown("**📷 Evidencia de Monitoreo / Equipos**")
-    fotos_monitoreo = st.file_uploader("Subir fotos mediciones", accept_multiple_files=True, key="fotos_mon")
-    if fotos_monitoreo: st.success(f"✅ {len(fotos_monitoreo)} fotos cargadas.")
+    fotos_monitoreo = st.file_uploader("Subir fotos mediciones", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'heic'], key="fotos_mon")
+    if fotos_monitoreo: st.success(f"✅ {len(fotos_monitoreo)} fotos recibidas.")
 
     # 5. ANEXO FOTOGRÁFICO
     st.subheader("V. Anexo Fotográfico General")
     st.info("ℹ️ Fotos adicionales que no correspondan a las categorías anteriores.")
-    fotos_anexo_est = st.file_uploader("Otras fotos generales", accept_multiple_files=True, key="anexo_est")
-    if fotos_anexo_est: st.success(f"✅ {len(fotos_anexo_est)} fotos cargadas.")
+    fotos_anexo_est = st.file_uploader("Otras fotos generales", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'heic'], key="anexo_est")
+    if fotos_anexo_est: st.success(f"✅ {len(fotos_anexo_est)} fotos recibidas.")
     
     st.markdown("---")
     st.subheader("✍️ Firma Supervisor")
-    firma_file_est = st.file_uploader("Subir firma (opcional)", type=["png", "jpg", "jpeg"], key="firma_est")
+    firma_file_est = st.file_uploader("Subir firma (opcional)", type=["png", "jpg", "jpeg", "heic"], key="firma_est")
 
     if st.button("🚀 GENERAR INFORME ESTRUCTURAS"):
         try:
@@ -563,7 +583,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 if valores.sum() > 0: 
                     ax.plot(eje_x, valores, marker='o', label=col)
                     hay_datos_grafico = True
-            ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal')
+            ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
             if hay_datos_grafico: ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=5, frameon=False, fontsize='small')
             plt.subplots_adjust(top=0.85)
             plt.tight_layout()
