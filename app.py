@@ -360,7 +360,7 @@ elif st.session_state.app_mode == "MOLINOS":
         except Exception as e: st.error(f"Error: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA 2: ESTRUCTURAS (v8.7 - SIN PUNTOS Y COMA)
+# LÓGICA 2: ESTRUCTURAS (v8.8 - MULTI-CARGA FOTOS)
 # ==============================================================================
 elif st.session_state.app_mode == "ESTRUCTURAS":
     with st.sidebar:
@@ -402,10 +402,18 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         hora_rev = st.time_input("Hora Revisión", datetime.time(10, 0))
     estructuras_sel = st.multiselect("Estructuras a tratar", ["Silos", "Tolvas", "Roscas", "Elevadores", "Pozos", "Ductos Descarga", "Ductos Carga", "Pavos", "Ductos Aspiración", "Celdas"])
     
+    # >>> FOTOS LIMPIEZA
+    st.markdown("**📷 Evidencia de Limpieza / Sellado (Item 2.1)**")
+    fotos_limpieza = st.file_uploader("Subir fotos sellado/limpieza", accept_multiple_files=True, key="fotos_limp")
+
     # 3. DOSIS
     st.subheader("III. Volumen y Dosis (Cálculo Automático)")
     data_struct = [{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}]
     df_estructuras = st.data_editor(pd.DataFrame(data_struct), num_rows="dynamic", use_container_width=True)
+    
+    # >>> FOTOS DOSIS
+    st.markdown("**📷 Evidencia de Dosificación (Insumos aplicados)**")
+    fotos_dosis_est = st.file_uploader("Subir fotos dosificación", accept_multiple_files=True, key="fotos_dosis_est")
 
     # 4. MEDICIONES
     st.subheader("IV. Tiempos y Mediciones")
@@ -434,10 +442,14 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     cols_totales = ["Fecha", "Hora"] + nombres_puntos
     df_med_est = st.data_editor(pd.DataFrame(data_med_est, columns=cols_totales), num_rows="dynamic", use_container_width=True)
 
-    # 5. ANEXO FOTOGRÁFICO UNIFICADO
-    st.subheader("V. Anexo Fotográfico (Unificado)")
-    st.info("ℹ️ Suba aquí TODAS las fotos: Limpieza, Dosis, Monitoreo y Generales.")
-    fotos_anexo_est = st.file_uploader("Fotos del Servicio", accept_multiple_files=True, key="anexo_est")
+    # >>> FOTOS MEDICIONES
+    st.markdown("**📷 Evidencia de Monitoreo / Equipos**")
+    fotos_monitoreo = st.file_uploader("Subir fotos mediciones", accept_multiple_files=True, key="fotos_mon")
+
+    # 5. ANEXO FOTOGRÁFICO
+    st.subheader("V. Anexo Fotográfico General")
+    st.info("ℹ️ Fotos adicionales que no correspondan a las categorías anteriores.")
+    fotos_anexo_est = st.file_uploader("Otras fotos generales", accept_multiple_files=True, key="anexo_est")
     
     st.markdown("---")
     st.subheader("✍️ Firma Supervisor")
@@ -478,6 +490,10 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             pdf.set_font("Arial", "B", 9)
             pdf.cell(0, 6, f"Estructuras intervenidas: {est_str}", ln=1)
             
+            # >>> IMPRIMIR FOTOS LIMPIEZA
+            if fotos_limpieza:
+                pdf.agregar_galeria_fotos(fotos_limpieza, titulo_opcional="Evidencia de Limpieza y Sellado:")
+            
             # 3. DOSIS
             pdf.titulo_seccion("II", "VOLUMEN Y DOSIFICACIÓN")
             header_dosis = ["Estructura", "Vol(m3)", "Plac", "Rope", "Phos", "Dosis g/m3"]
@@ -502,6 +518,10 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             pdf.ln(2)
             pdf.set_font("Arial", "B", 10)
             pdf.cell(0, 6, f"Total Gas Generado: {total_g:.1f} gramos.", ln=1, align="R")
+
+            # >>> IMPRIMIR FOTOS DOSIS
+            if fotos_dosis_est:
+                pdf.agregar_galeria_fotos(fotos_dosis_est, titulo_opcional="Evidencia de Dosificación:")
 
             # 4. TIEMPOS Y MEDICIONES
             pdf.add_page()
@@ -530,7 +550,11 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             data_pdf = [[str(x) for x in r] for _, r in df_med_est.iterrows()]
             pdf.tabla_estilizada(cols_pdf, data_pdf, [25, 20, 25, 25, 25, 25, 25])
 
-            # 5. ANEXO FOTOS UNIFICADO
+            # >>> IMPRIMIR FOTOS MEDICIONES
+            if fotos_monitoreo:
+                pdf.agregar_galeria_fotos(fotos_monitoreo, titulo_opcional="Evidencia de Monitoreo:")
+
+            # 5. ANEXO FOTOS GENERAL
             if fotos_anexo_est:
                 pdf.add_page()
                 pdf.titulo_seccion("IV", "ANEXO FOTOGRÁFICO")
