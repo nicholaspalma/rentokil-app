@@ -7,7 +7,7 @@ import os
 import tempfile
 from PIL import Image, ImageOps, ImageFile
 import traceback
-import gc # Garbage Collector para limpiar memoria RAM
+import gc
 
 # --- CONFIGURACIÓN PARA IMÁGENES ROTAS O TRUNCADAS ---
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -17,7 +17,7 @@ try:
     from pillow_heif import register_heif_opener
     register_heif_opener()
 except ImportError:
-    pass # Si no está instalado, intentará seguir igual
+    pass
 
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(layout="wide", page_title="Rentokil Mobile PRO")
@@ -25,7 +25,7 @@ COLOR_PRIMARIO = (227, 6, 19)
 COLOR_TABLA_HEAD = (220, 220, 220)
 COLOR_TABLA_FILA = (255, 255, 255)
 
-# --- GESTIÓN DE ESTADO (MEMORIA) ---
+# --- GESTIÓN DE ESTADO ---
 if "app_mode" not in st.session_state:
     st.session_state.app_mode = "HOME"
 if "pdf_data" not in st.session_state:
@@ -74,7 +74,6 @@ def procesar_imagen_estilizada(uploaded_file):
         if image.mode != 'RGB':
             image = image.convert('RGB')
         
-        # Reducir tamaño preventivamente si es muy grande
         if image.width > 1200:
             ratio = 1200 / float(image.width)
             new_height = int((float(image.height) * float(ratio)))
@@ -84,14 +83,11 @@ def procesar_imagen_estilizada(uploaded_file):
         
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         image_fixed.save(tmp.name, format='JPEG', quality=85, optimize=True)
-        
         image.close()
         del image
         gc.collect()
-        
         return tmp.name
-    except Exception as e:
-        print(f"Error procesando imagen: {e}")
+    except Exception:
         return None
 
 def procesar_firma(uploaded_file):
@@ -127,11 +123,12 @@ class PDF(FPDF):
         self.cell(0, 10, f"Página {self.page_no()} - Documento Oficial", align="C")
 
     def check_page_break(self, needed_height):
+        # Umbral de seguridad (250mm es aprox el límite antes del footer)
         if self.get_y() + needed_height > 250:
             self.add_page()
 
     def titulo_seccion(self, numero, texto):
-        self.check_page_break(20)
+        self.check_page_break(25)
         self.ln(5)
         self.set_font("Arial", "B", 10)
         self.set_fill_color(*COLOR_PRIMARIO)
@@ -162,7 +159,9 @@ class PDF(FPDF):
             
     def agregar_galeria_fotos(self, lista_fotos, titulo_opcional=None):
         if not lista_fotos: return
-        self.check_page_break(50)
+        
+        # Verificar espacio para título
+        self.check_page_break(20)
         
         if titulo_opcional:
             self.ln(2)
@@ -170,24 +169,31 @@ class PDF(FPDF):
             self.cell(0, 6, titulo_opcional, ln=1)
         
         y_start = self.get_y()
+        
         for i, f in enumerate(lista_fotos):
             tmp_path = procesar_imagen_estilizada(f)
             if tmp_path:
                 try:
-                    if self.get_y() > 220:
+                    # CORRECCIÓN CLAVE: Si queda poco espacio (menos de 80mm), nueva página
+                    if self.get_y() > 210:
                         self.add_page()
-                        self.set_y(20)
-                        y_start = 20
-                        if i % 2 != 0: y_start = 20 
+                        # CORRECCIÓN CLAVE: Bajar cursor a 45 para NO TAPAR EL LOGO
+                        self.set_y(45) 
+                        y_start = 45
+                        # Si es la segunda foto del par, reiniciar para que empiece en la nueva hoja
+                        if i % 2 != 0: y_start = 45 
                     
                     if i % 2 == 0:
                         y_act = self.get_y()
                         self.image(tmp_path, x=10, y=y_act, w=90, h=65)
                     else:
+                        # Usar la misma Y que la foto izquierda
                         self.image(tmp_path, x=110, y=y_act, w=90, h=65)
-                        self.ln(70)
+                        self.ln(70) # Bajar cursor después del par
                     os.remove(tmp_path)
                 except: pass
+                
+        # Si quedó una foto impar, bajar el cursor
         if len(lista_fotos) % 2 != 0: self.ln(70)
 
 
@@ -337,7 +343,7 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.add_page()
             pdf.titulo_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)")
             fig, ax = plt.subplots(figsize=(10, 5))
-            # CORRECCIÓN ERROR TYPE: Convertir a string explícitamente
+            # FIX: Convertir a string
             eje_x_labels = df_meds["Fecha"].astype(str) + "\n" + df_meds["Hora"].astype(str)
             for col in df_meds.columns[2:]: 
                 ax.plot(eje_x_labels, pd.to_numeric(df_meds[col], errors='coerce'), marker='o', label=col)
@@ -562,7 +568,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             
             pdf.ln(5)
             fig, ax = plt.subplots(figsize=(10, 5))
-            # CORRECCIÓN ERROR TYPE: Convertir a string explícitamente
+            # FIX: Convertir a string
             eje_x = df_med_est["Fecha"].astype(str) + "\n" + df_med_est["Hora"].astype(str)
             hay_datos_grafico = False
             for col in df_med_est.columns[2:]: 
@@ -587,7 +593,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             if fotos_monitoreo:
                 pdf.agregar_galeria_fotos(fotos_monitoreo, titulo_opcional="Evidencia de Monitoreo:")
 
-            # 5. ANEXO FOTOS GENERAL
+            # 5. ANEXO FOTOS GENERAL (NUEVA PÁGINA OBLIGATORIA)
             if fotos_anexo_est:
                 pdf.add_page()
                 pdf.titulo_seccion("IV", "ANEXO FOTOGRÁFICO")
