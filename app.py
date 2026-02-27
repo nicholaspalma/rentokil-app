@@ -47,7 +47,6 @@ LISTA_REPRESENTANTES = [
 
 # --- FUNCIONES UTILITARIAS ---
 def clean_number(value):
-    """Convierte entradas numéricas sucias (con comas o vacíos) a float seguro."""
     if value is None: return 0.0
     if isinstance(value, (int, float)): return float(value)
     if isinstance(value, str):
@@ -58,18 +57,33 @@ def clean_number(value):
     return 0.0
 
 def procesar_imagen_estilizada(uploaded_file):
-    """Procesamiento robusto de imagen: Arregla rotación, color y tamaño (4:3)"""
+    """
+    Versión OPTIMIZADA PARA MÓVIL: Reduce tamaño antes de procesar
+    para evitar errores de memoria RAM.
+    """
     try:
         image = Image.open(uploaded_file)
+        
+        # 1. REDUCCIÓN DE TAMAÑO PREVENTIVA (Anti-Crash Memoria)
+        # Si la imagen es gigante (ej: 4000px), la bajamos a 1200px máx
+        image.thumbnail((1200, 1200)) 
+        
+        # 2. Corregir rotación (EXIF)
         image = ImageOps.exif_transpose(image)
+        
+        # 3. Asegurar RGB
         if image.mode != 'RGB':
             image = image.convert('RGB')
+            
+        # 4. Recorte Final 4:3 (800x600)
         image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS)
         
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        image_fixed.save(tmp.name, format='JPEG', quality=90)
+        image_fixed.save(tmp.name, format='JPEG', quality=85)
         return tmp.name
-    except Exception:
+    except Exception as e:
+        # Mostrar error en pantalla para saber qué pasó
+        st.error(f"⚠️ Error procesando imagen {uploaded_file.name}: {e}")
         return None
 
 def procesar_firma(uploaded_file):
@@ -149,7 +163,9 @@ class PDF(FPDF):
         
         y_start = self.get_y()
         for i, f in enumerate(lista_fotos):
+            # Procesar
             tmp_path = procesar_imagen_estilizada(f)
+            
             if tmp_path:
                 try:
                     if self.get_y() > 220:
@@ -165,7 +181,8 @@ class PDF(FPDF):
                         self.image(tmp_path, x=110, y=y_act, w=90, h=65)
                         self.ln(70)
                     os.remove(tmp_path)
-                except: pass
+                except Exception as e:
+                    st.error(f"Error pegando foto en PDF: {e}")
         if len(lista_fotos) % 2 != 0: self.ln(70)
 
 
@@ -240,6 +257,8 @@ elif st.session_state.app_mode == "MOLINOS":
 
     st.info("📷 Fotos dosificación (Página 1)")
     fotos_dosis = st.file_uploader("Subir evidencia dosis", accept_multiple_files=True, key="dosis_mol")
+    if fotos_dosis:
+        st.success(f"✅ {len(fotos_dosis)} fotos cargadas correctamente.")
     
     total_bandejas = df_dosis["Bandejas"].apply(clean_number).sum()
     total_ropes = df_dosis["Mini-Ropes"].apply(clean_number).sum()
@@ -258,6 +277,9 @@ elif st.session_state.app_mode == "MOLINOS":
 
     st.subheader("V. Anexo Fotográfico")
     fotos_anexo = st.file_uploader("Fotos Generales", accept_multiple_files=True, key="anexo_mol")
+    if fotos_anexo:
+        st.success(f"✅ {len(fotos_anexo)} fotos cargadas correctamente.")
+
     st.markdown("---")
     st.subheader("✍️ Firma Supervisor")
     firma_file = st.file_uploader("Subir firma (opcional)", type=["png", "jpg", "jpeg"], key="firma_mol")
@@ -360,7 +382,7 @@ elif st.session_state.app_mode == "MOLINOS":
         except Exception as e: st.error(f"Error: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA 2: ESTRUCTURAS (v8.8 - MULTI-CARGA FOTOS)
+# LÓGICA 2: ESTRUCTURAS
 # ==============================================================================
 elif st.session_state.app_mode == "ESTRUCTURAS":
     with st.sidebar:
@@ -402,18 +424,20 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         hora_rev = st.time_input("Hora Revisión", datetime.time(10, 0))
     estructuras_sel = st.multiselect("Estructuras a tratar", ["Silos", "Tolvas", "Roscas", "Elevadores", "Pozos", "Ductos Descarga", "Ductos Carga", "Pavos", "Ductos Aspiración", "Celdas"])
     
-    # >>> FOTOS LIMPIEZA
+    # FOTOS LIMPIEZA
     st.markdown("**📷 Evidencia de Limpieza / Sellado (Item 2.1)**")
     fotos_limpieza = st.file_uploader("Subir fotos sellado/limpieza", accept_multiple_files=True, key="fotos_limp")
+    if fotos_limpieza: st.success(f"✅ {len(fotos_limpieza)} fotos cargadas.")
 
     # 3. DOSIS
     st.subheader("III. Volumen y Dosis (Cálculo Automático)")
     data_struct = [{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}]
     df_estructuras = st.data_editor(pd.DataFrame(data_struct), num_rows="dynamic", use_container_width=True)
     
-    # >>> FOTOS DOSIS
+    # FOTOS DOSIS
     st.markdown("**📷 Evidencia de Dosificación (Insumos aplicados)**")
     fotos_dosis_est = st.file_uploader("Subir fotos dosificación", accept_multiple_files=True, key="fotos_dosis_est")
+    if fotos_dosis_est: st.success(f"✅ {len(fotos_dosis_est)} fotos cargadas.")
 
     # 4. MEDICIONES
     st.subheader("IV. Tiempos y Mediciones")
@@ -442,14 +466,16 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     cols_totales = ["Fecha", "Hora"] + nombres_puntos
     df_med_est = st.data_editor(pd.DataFrame(data_med_est, columns=cols_totales), num_rows="dynamic", use_container_width=True)
 
-    # >>> FOTOS MEDICIONES
+    # FOTOS MEDICIONES
     st.markdown("**📷 Evidencia de Monitoreo / Equipos**")
     fotos_monitoreo = st.file_uploader("Subir fotos mediciones", accept_multiple_files=True, key="fotos_mon")
+    if fotos_monitoreo: st.success(f"✅ {len(fotos_monitoreo)} fotos cargadas.")
 
     # 5. ANEXO FOTOGRÁFICO
     st.subheader("V. Anexo Fotográfico General")
     st.info("ℹ️ Fotos adicionales que no correspondan a las categorías anteriores.")
     fotos_anexo_est = st.file_uploader("Otras fotos generales", accept_multiple_files=True, key="anexo_est")
+    if fotos_anexo_est: st.success(f"✅ {len(fotos_anexo_est)} fotos cargadas.")
     
     st.markdown("---")
     st.subheader("✍️ Firma Supervisor")
@@ -537,7 +563,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 if valores.sum() > 0: 
                     ax.plot(eje_x, valores, marker='o', label=col)
                     hay_datos_grafico = True
-            ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
+            ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal')
             if hay_datos_grafico: ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=5, frameon=False, fontsize='small')
             plt.subplots_adjust(top=0.85)
             plt.tight_layout()
