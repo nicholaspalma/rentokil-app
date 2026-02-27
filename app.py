@@ -68,38 +68,23 @@ def clean_number(value):
     return 0.0
 
 def procesar_imagen_estilizada(uploaded_file):
-    """
-    Versión ULTIMATE para Móvil:
-    1. Soporta HEIC/JPG/PNG.
-    2. Comprime antes de procesar para no saturar RAM.
-    3. Corrige rotación.
-    """
     try:
-        # Abrir imagen (Pillow-heif maneja HEIC automático aquí)
         image = Image.open(uploaded_file)
-        
-        # Corrección inmediata de orientación (Celulares toman fotos rotadas)
         image = ImageOps.exif_transpose(image)
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
         
-        # Convertir a RGB (Elimina problemas de transparencia o CMYK)
-        if image.mode in ("RGBA", "P", "CMYK"):
-            image = image.convert("RGB")
-            
-        # Reducir tamaño drásticamente si es muy grande (Anti-Crash RAM)
-        # Si el ancho es mayor a 1200px, redimensionar manteniendo proporción
+        # Reducir tamaño preventivamente si es muy grande
         if image.width > 1200:
             ratio = 1200 / float(image.width)
             new_height = int((float(image.height) * float(ratio)))
             image = image.resize((1200, new_height), Image.Resampling.LANCZOS)
 
-        # Recorte final 4:3 (800x600) para el informe
         image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS)
         
-        # Guardar en temporal comprimido
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         image_fixed.save(tmp.name, format='JPEG', quality=85, optimize=True)
         
-        # Limpiar memoria
         image.close()
         del image
         gc.collect()
@@ -207,7 +192,7 @@ class PDF(FPDF):
 
 
 # ==============================================================================
-# PANTALLA DE INICIO
+# PANTALLA DE INICIO (HOME)
 # ==============================================================================
 if st.session_state.app_mode == "HOME":
     st.write("")
@@ -352,8 +337,9 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.add_page()
             pdf.titulo_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)")
             fig, ax = plt.subplots(figsize=(10, 5))
-            eje_x_labels = df_med_est["Fecha"] + "\n" + df_med_est["Hora"]
-            for col in df_med_est.columns[2:]: 
+            # CORRECCIÓN ERROR TYPE: Convertir a string explícitamente
+            eje_x_labels = df_meds["Fecha"].astype(str) + "\n" + df_meds["Hora"].astype(str)
+            for col in df_meds.columns[2:]: 
                 ax.plot(eje_x_labels, pd.to_numeric(df_meds[col], errors='coerce'), marker='o', label=col)
             ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal')
             ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False, fontsize='small')
@@ -402,7 +388,7 @@ elif st.session_state.app_mode == "MOLINOS":
         except Exception as e: st.error(f"Error: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA 2: ESTRUCTURAS (v9.0 - MULTI-CARGA + HEIC FIX)
+# LÓGICA 2: ESTRUCTURAS
 # ==============================================================================
 elif st.session_state.app_mode == "ESTRUCTURAS":
     with st.sidebar:
@@ -576,7 +562,8 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             
             pdf.ln(5)
             fig, ax = plt.subplots(figsize=(10, 5))
-            eje_x = df_med_est["Fecha"] + "\n" + df_med_est["Hora"]
+            # CORRECCIÓN ERROR TYPE: Convertir a string explícitamente
+            eje_x = df_med_est["Fecha"].astype(str) + "\n" + df_med_est["Hora"].astype(str)
             hay_datos_grafico = False
             for col in df_med_est.columns[2:]: 
                 valores = pd.to_numeric(df_med_est[col], errors='coerce').fillna(0)
@@ -635,7 +622,8 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
                 pdf.output(tmp_pdf.name)
-                with open(tmp_pdf.name, "rb") as f: st.session_state.pdf_data = f.read()
+                with open(tmp_pdf.name, "rb") as f:
+                    st.session_state.pdf_data = f.read()
             st.rerun()
             
         except Exception as e: st.error(f"Error: {e}"); st.code(traceback.format_exc())
