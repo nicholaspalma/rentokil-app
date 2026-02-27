@@ -332,6 +332,7 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.add_page()
             pdf.titulo_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)")
             fig, ax = plt.subplots(figsize=(10, 5))
+            # FIX: Convertir a string explícitamente
             eje_x_labels = df_meds["Fecha"].astype(str) + "\n" + df_meds["Hora"].astype(str)
             for col in df_meds.columns[2:]: 
                 ax.plot(eje_x_labels, pd.to_numeric(df_meds[col], errors='coerce'), marker='o', label=col)
@@ -424,7 +425,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         hora_rev = st.time_input("Hora Revisión", datetime.time(10, 0))
     estructuras_sel = st.multiselect("Estructuras a tratar", ["Silos", "Tolvas", "Roscas", "Elevadores", "Pozos", "Ductos Descarga", "Ductos Carga", "Pavos", "Ductos Aspiración", "Celdas"])
     
-    # --- GATILLO OBSERVACIONES (CAMBIO SOLICITADO) ---
+    # GATILLO OBSERVACIONES
     hay_observaciones = st.checkbox("⚠️ ¿Agregar observaciones de limpieza/mejoras?")
     texto_observaciones = ""
     if hay_observaciones:
@@ -609,9 +610,9 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             pdf.add_page()
             pdf.titulo_seccion("V", "CONCLUSIONES TÉCNICAS")
             
-            # Lógica de texto según tipo
+            # TEXTO MEJORADO v9.6 (PREVENTIVO SANITARIO)
             if tipo_trat == "Preventivo":
-                texto_eficacia = "asegurando una acción profiláctica eficaz contra posibles vectores y eliminando focos de infestación no visibles, resguardando la inocuidad de la planta."
+                texto_eficacia = "logrando establecer una barrera sanitaria efectiva que elimina reservorios biológicos latentes y mitiga riesgos de contaminación cruzada, garantizando así la integridad higiénica de las instalaciones."
             else:
                 texto_eficacia = f"asegurando el control de {plaga_e} en sus distintos estadios de desarrollo."
 
