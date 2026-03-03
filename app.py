@@ -25,11 +25,33 @@ COLOR_PRIMARIO = (227, 6, 19)
 COLOR_TABLA_HEAD = (220, 220, 220)
 COLOR_TABLA_FILA = (255, 255, 255)
 
-# --- GESTIÓN DE ESTADO ---
-if "app_mode" not in st.session_state:
-    st.session_state.app_mode = "HOME"
-if "pdf_data" not in st.session_state:
-    st.session_state.pdf_data = None
+# --- GESTIÓN DE ESTADO (MEMORIA PROFUNDA) ---
+if "app_mode" not in st.session_state: st.session_state.app_mode = "HOME"
+if "pdf_data" not in st.session_state: st.session_state.pdf_data = None
+
+# Memoria Tablas Molinos
+if "df_dosis_mol" not in st.session_state:
+    st.session_state.df_dosis_mol = pd.DataFrame([
+        {"Piso": "Subterráneo", "Bandejas": 10, "Mini-Ropes": 2}, {"Piso": "Piso 1", "Bandejas": 10, "Mini-Ropes": 2},
+        {"Piso": "Piso 2", "Bandejas": 10, "Mini-Ropes": 2}, {"Piso": "Piso 3", "Bandejas": 10, "Mini-Ropes": 2},
+        {"Piso": "Piso 4", "Bandejas": 8, "Mini-Ropes": 1}, {"Piso": "Piso 5", "Bandejas": 5, "Mini-Ropes": 0}
+    ])
+if "df_meds_mol" not in st.session_state:
+    d_m = []
+    for i in range(3):
+        f_s = (datetime.date.today() + datetime.timedelta(days=i)).strftime("%d-%m")
+        for h in ["19:00", "00:00", "07:00", "13:00"]: d_m.append([f_s, h, 300, 310, 320, 305, 300, 290])
+    st.session_state.df_meds_mol = pd.DataFrame(d_m, columns=["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "Piso 5"])
+
+# Memoria Tablas Estructuras
+if "df_dosis_est" not in st.session_state:
+    st.session_state.df_dosis_est = pd.DataFrame([{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}])
+if "nom_p_est" not in st.session_state:
+    st.session_state.nom_p_est = ["Punto 1", "Punto 2", "Punto 3", "Punto 4", "Punto 5"]
+if "df_meds_est" not in st.session_state:
+    d_me = []
+    for i in range(3): d_me.append([(datetime.date.today() + datetime.timedelta(days=i)).strftime("%d-%m"), "10:00", 0, 0, 0, 0, 0])
+    st.session_state.df_meds_est = pd.DataFrame(d_me, columns=["Fecha", "Hora"] + st.session_state.nom_p_est)
 
 # --- BASES DE DATOS ---
 DATABASE_MOLINOS = {
@@ -51,18 +73,11 @@ DATABASE_ESTRUCTURAS_EXTRA = {
     "OTRO": ""
 }
 
-LISTA_REPRESENTANTES = [
-    "Nicholas Palma", "Vicente Madariaga", "Sebastián Carrillo", 
-    "Stefano Pernigotti", "Herbert Diaz", "Juan Callofa", "Maximiliano Caro"
-]
+LISTA_REPRESENTANTES = ["Nicholas Palma", "Vicente Madariaga", "Sebastián Carrillo", "Stefano Pernigotti", "Herbert Diaz", "Juan Callofa", "Maximiliano Caro"]
 
 # --- FUNCIONES ---
 def format_fecha_es(fecha):
-    """Convierte un objeto date a string en español: 02 de Marzo de 2026"""
-    meses = {
-        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
-        7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
-    }
+    meses = {1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"}
     return f"{fecha.day:02d} de {meses[fecha.month]} de {fecha.year}"
 
 def clean_number(value):
@@ -77,10 +92,10 @@ def clean_number(value):
 
 def procesar_imagen_estilizada(uploaded_file):
     try:
+        uploaded_file.seek(0) # FIX: Reiniciar puntero del archivo
         image = Image.open(uploaded_file)
         image = ImageOps.exif_transpose(image)
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
+        if image.mode != 'RGB': image = image.convert('RGB')
         if image.width > 1200:
             ratio = 1200 / float(image.width)
             new_height = int((float(image.height) * float(ratio)))
@@ -92,10 +107,11 @@ def procesar_imagen_estilizada(uploaded_file):
         del image
         gc.collect()
         return tmp.name
-    except Exception: return None
+    except Exception as e: print(f"Error procesando imagen: {e}"); return None
 
 def procesar_firma(uploaded_file):
     try:
+        uploaded_file.seek(0)
         image = Image.open(uploaded_file)
         image = ImageOps.exif_transpose(image)
         image = image.convert('RGBA')
@@ -126,9 +142,11 @@ class PDF(FPDF):
         self.set_text_color(150, 150, 150)
         self.cell(0, 10, f"Página {self.page_no()} - Documento Oficial", align="C")
 
+    def check_page_break(self, needed_height):
+        if self.get_y() + needed_height > 250: self.add_page()
+
     def titulo_seccion(self, numero, texto, force_page=False):
-        if force_page:
-            self.add_page()
+        if force_page: self.add_page()
         self.ln(5)
         self.set_font("Arial", "B", 10)
         self.set_fill_color(*COLOR_PRIMARIO)
@@ -138,35 +156,33 @@ class PDF(FPDF):
         self.ln(2)
 
     def tabla_estilizada(self, header, data, col_widths, bold_last_row=False):
+        self.check_page_break(20)
         self.set_font("Arial", "B", 7)
         self.set_fill_color(*COLOR_TABLA_HEAD)
-        for i, h in enumerate(header):
-            self.cell(col_widths[i], 8, h, 1, 0, 'C', True)
+        for i, h in enumerate(header): self.cell(col_widths[i], 8, h, 1, 0, 'C', True)
         self.ln()
         self.set_font("Arial", "", 7)
         for idx, row in enumerate(data):
-            if bold_last_row and idx == len(data) - 1:
-                self.set_font("Arial", "B", 7)
-            else:
-                self.set_font("Arial", "", 7)
+            if bold_last_row and idx == len(data) - 1: self.set_font("Arial", "B", 7)
+            else: self.set_font("Arial", "", 7)
             self.set_fill_color(*COLOR_TABLA_FILA)
-            for i, d in enumerate(row):
-                self.cell(col_widths[i], 6, str(d), 1, 0, 'C', True)
+            for i, d in enumerate(row): self.cell(col_widths[i], 6, str(d), 1, 0, 'C', True)
             self.ln()
             
     def agregar_galeria_fotos(self, lista_fotos, titulo_opcional=None):
         if not lista_fotos: return
+        self.check_page_break(20)
         if titulo_opcional:
-            self.ln(2)
-            self.set_font("Arial", "B", 9)
-            self.cell(0, 6, titulo_opcional, ln=1)
+            self.ln(2); self.set_font("Arial", "B", 9); self.cell(0, 6, titulo_opcional, ln=1)
+        y_start = self.get_y()
         for i, f in enumerate(lista_fotos):
             tmp_path = procesar_imagen_estilizada(f)
             if tmp_path:
                 try:
                     if self.get_y() > 210:
-                        self.add_page()
-                        self.set_y(45)
+                        self.add_page(); self.set_y(45)
+                        y_start = 45
+                        if i % 2 != 0: y_start = 45 
                     if i % 2 == 0:
                         y_act = self.get_y()
                         self.image(tmp_path, x=10, y=y_act, w=90, h=65)
@@ -228,35 +244,30 @@ elif st.session_state.app_mode == "MOLINOS":
     horas_exp = (datetime.datetime.combine(f_ter, h_ter) - datetime.datetime.combine(f_ini, h_ini)).total_seconds() / 3600
 
     st.subheader("III. Distribución y Dosis")
-    df_dosis = st.data_editor(pd.DataFrame([
-        {"Piso": "Subterráneo", "Bandejas": 10, "Mini-Ropes": 2},
-        {"Piso": "Piso 1", "Bandejas": 10, "Mini-Ropes": 2},
-        {"Piso": "Piso 2", "Bandejas": 10, "Mini-Ropes": 2},
-        {"Piso": "Piso 3", "Bandejas": 10, "Mini-Ropes": 2},
-        {"Piso": "Piso 4", "Bandejas": 8, "Mini-Ropes": 1},
-        {"Piso": "Piso 5", "Bandejas": 5, "Mini-Ropes": 0},
-    ]), num_rows="dynamic", use_container_width=True)
+    st.session_state.df_dosis_mol = st.data_editor(st.session_state.df_dosis_mol, num_rows="dynamic", use_container_width=True, key="ed_d_mol")
     fotos_dosis = st.file_uploader("Evidencia dosis", accept_multiple_files=True, key="d_mol")
-    total_bandejas = df_dosis["Bandejas"].apply(clean_number).sum()
-    total_ropes = df_dosis["Mini-Ropes"].apply(clean_number).sum()
+    
+    total_bandejas = st.session_state.df_dosis_mol["Bandejas"].apply(clean_number).sum()
+    total_ropes = st.session_state.df_dosis_mol["Mini-Ropes"].apply(clean_number).sum()
     gramos_totales = (total_bandejas * 500) + (total_ropes * 333)
     dosis_final = gramos_totales / volumen_total if volumen_total > 0 else 0
 
     st.subheader("IV. Mediciones")
-    data_inicial = []
-    for i in range(3):
-        f_str = (f_ini + datetime.timedelta(days=i)).strftime("%d-%m")
-        for h in ["19:00", "00:00", "07:00", "13:00"]:
-            data_inicial.append([f_str, h, 300, 310, 320, 305, 300, 290])
-    cols_meds = ["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "Piso 5"]
-    df_meds = st.data_editor(pd.DataFrame(data_inicial, columns=cols_meds), num_rows="dynamic", use_container_width=True)
-    promedio_ppm = df_meds.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
+    st.session_state.df_meds_mol = st.data_editor(st.session_state.df_meds_mol, num_rows="dynamic", use_container_width=True, key="ed_m_mol")
+    promedio_ppm = st.session_state.df_meds_mol.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
 
     st.subheader("V. Anexo Fotográfico")
     fotos_anexo = st.file_uploader("Fotos Generales", accept_multiple_files=True, key="a_mol")
     firma_file = st.file_uploader("Firma Supervisor", type=["png", "jpg", "jpeg"], key="f_mol")
 
     if st.button("🚀 GENERAR INFORME MOLINOS"):
+        # Fix Scope Variables via Session State Keys
+        fotos_dosis_val = st.session_state.get("d_mol", [])
+        fotos_anexo_val = st.session_state.get("a_mol", [])
+        firma_file_val = st.session_state.get("f_mol", None)
+        df_dosis_val = st.session_state.df_dosis_mol
+        df_meds_val = st.session_state.df_meds_mol
+
         try:
             pdf = PDF()
             pdf.add_page()
@@ -274,39 +285,32 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.tabla_estilizada(["Evento", "Fecha", "Hora", "Total Horas"], [["Inyección", str(f_ini), str(h_ini), f"{horas_exp:.1f}"], ["Ventilación", str(f_ter), str(h_ter), "---"]], [45, 45, 45, 45])
             
             pdf.titulo_seccion("III", "DOSIFICACIÓN")
-            d_dosis_pdf = [[str(r['Piso']), str(r['Bandejas']), str(r['Mini-Ropes'])] for _, r in df_dosis.iterrows()]
+            d_dosis_pdf = [[str(r['Piso']), str(r['Bandejas']), str(r['Mini-Ropes'])] for _, r in df_dosis_val.iterrows()]
             d_dosis_pdf.append(["TOTALES", str(int(total_bandejas)), str(int(total_ropes))])
             pdf.tabla_estilizada(["Sector", "Bandejas", "Mini-Ropes"], d_dosis_pdf, [80, 50, 50], bold_last_row=True)
-            if fotos_dosis:
-                pdf.ln(2); y_start = pdf.get_y()
-                for i, f in enumerate(fotos_dosis[:2]):
-                    tmp_p = procesar_imagen_estilizada(f)
-                    if tmp_p:
-                        x_pos = 10 if i == 0 else 105
-                        pdf.image(tmp_p, x=x_pos, y=y_start, w=85, h=60); os.remove(tmp_p)
-                pdf.ln(65)
+            if fotos_dosis_val: pdf.agregar_galeria_fotos(fotos_dosis_val, "Evidencia de Dosificación:")
             pdf.set_font("Arial", "B", 10); pdf.cell(0, 8, f"DOSIS FINAL: {dosis_final:.2f} g/m3", ln=1, align="R")
             
             pdf.add_page(); pdf.titulo_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)")
             fig, ax = plt.subplots(figsize=(10, 5))
-            e_x = df_meds["Fecha"].astype(str) + "\n" + df_meds["Hora"].astype(str)
-            for col in df_meds.columns[2:]: ax.plot(e_x, pd.to_numeric(df_meds[col], errors='coerce'), marker='o', label=col)
+            e_x = df_meds_val["Fecha"].astype(str) + "\n" + df_meds_val["Hora"].astype(str)
+            for col in df_meds_val.columns[2:]: ax.plot(e_x, pd.to_numeric(df_meds_val[col], errors='coerce'), marker='o', label=col)
             ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal'); ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False)
             plt.xticks(rotation=45); plt.tight_layout()
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_g:
                 fig.savefig(tmp_g.name, dpi=300); pdf.image(tmp_g.name, x=10, w=190)
-            pdf.ln(5); pdf.tabla_estilizada(["Fech", "Hr", "S", "P1", "P2", "P3", "P4", "P5"], [[str(x) for x in r] for _, r in df_meds.iterrows()], [25, 20, 20, 20, 20, 20, 20, 20])
+            pdf.ln(5); pdf.tabla_estilizada(["Fech", "Hr", "S", "P1", "P2", "P3", "P4", "P5"], [[str(x) for x in r] for _, r in df_meds_val.iterrows()], [25, 20, 20, 20, 20, 20, 20, 20])
             
-            if fotos_anexo: pdf.add_page(); pdf.titulo_seccion("V", "ANEXO FOTOGRÁFICO"); pdf.agregar_galeria_fotos(fotos_anexo)
+            if fotos_anexo_val: pdf.add_page(); pdf.titulo_seccion("V", "ANEXO FOTOGRÁFICO"); pdf.agregar_galeria_fotos(fotos_anexo_val)
             pdf.add_page(); pdf.titulo_seccion("VI", "CONCLUSIONES TÉCNICAS")
             pdf.set_font("Arial", "", 10); pdf.multi_cell(0, 6, "Servicio declarado CONFORME cumpliendo estándares Rentokil Initial Chile."); pdf.ln(20)
             
             r_f = None
-            if firma_file: r_f = procesar_firma(firma_file)
+            if firma_file_val: r_f = procesar_firma(firma_file_val)
             elif os.path.exists('firma.png'): r_f = 'firma.png'
             if r_f:
                 pdf.image(r_f, x=75, w=60)
-                if firma_file and r_f != 'firma.png': os.remove(r_f)
+                if firma_file_val and r_f != 'firma.png': os.remove(r_f)
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_p:
                 pdf.output(tmp_p.name)
@@ -350,11 +354,11 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     
     hay_obs = st.checkbox("⚠️ ¿Agregar observaciones de limpieza?")
     txt_obs = st.text_area("Hallazgos:", height=80) if hay_obs else ""
-    fotos_l = st.file_uploader("Fotos sellado/limpieza", accept_multiple_files=True, key="f_l")
+    st.file_uploader("Fotos sellado/limpieza", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_l")
 
     st.subheader("III. Volumen y Dosis")
-    df_est = st.data_editor(pd.DataFrame([{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}]), num_rows="dynamic", use_container_width=True)
-    fotos_d = st.file_uploader("Fotos dosificación", accept_multiple_files=True, key="f_d")
+    st.session_state.df_dosis_est = st.data_editor(st.session_state.df_dosis_est, num_rows="dynamic", use_container_width=True, key="ed_d_est")
+    st.file_uploader("Fotos dosificación", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_d")
 
     st.subheader("IV. Tiempos y Mediciones")
     col_t1, col_t2 = st.columns(2)
@@ -362,37 +366,47 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     with col_t2: f_ter_e = st.date_input("Término", datetime.date.today() + datetime.timedelta(days=4)); h_ter_e = st.time_input("Hora Término", datetime.time(10, 0))
     h_exp_e = (datetime.datetime.combine(f_ter_e, h_ter_e) - datetime.datetime.combine(f_ini_e, h_ini_e)).total_seconds() / 3600
 
-    c_n = st.columns(5); nom_p = []
-    for i in range(5): nom_p.append(c_n[i].text_input(f"Nombre Punto {i+1}", f"Punto {i+1}", key=f"np_{i}"))
+    c_n = st.columns(5)
+    for i in range(5):
+        st.session_state.nom_p_est[i] = c_n[i].text_input(f"Nombre Punto {i+1}", st.session_state.nom_p_est[i], key=f"np_{i}")
     
-    data_med_est = []
-    for i in range(3): data_med_est.append([(f_ini_e + datetime.timedelta(days=i)).strftime("%d-%m"), "10:00", 0, 0, 0, 0, 0])
-    df_med_est = st.data_editor(pd.DataFrame(data_med_est, columns=["Fecha", "Hora"] + nom_p), num_rows="dynamic", use_container_width=True)
-    fotos_m = st.file_uploader("Fotos mediciones", accept_multiple_files=True, key="f_m")
+    # Sincronizar columnas de la tabla con los nombres ingresados
+    curr_cols = list(st.session_state.df_meds_est.columns)
+    new_cols = ["Fecha", "Hora"] + st.session_state.nom_p_est
+    if curr_cols != new_cols: st.session_state.df_meds_est.columns = new_cols
+    
+    st.session_state.df_meds_est = st.data_editor(st.session_state.df_meds_est, num_rows="dynamic", use_container_width=True, key="ed_m_est")
+    st.file_uploader("Fotos mediciones", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_m")
 
     st.subheader("V. Anexo Fotográfico")
-    fotos_anexo_est = st.file_uploader("Otras fotos", accept_multiple_files=True, key="a_est")
-    firma_e = st.file_uploader("Firma Supervisor", type=["png", "jpg", "jpeg"], key="f_est")
+    st.file_uploader("Otras fotos", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="a_est")
+    st.file_uploader("Firma Supervisor", type=["png", "jpg", "jpeg"], key="f_est")
 
     if st.button("🚀 GENERAR INFORME ESTRUCTURAS"):
+        # RECUPERACIÓN SEGURA DESDE SESSION_STATE (Evita pérdida de archivos al hacer clic)
+        fotos_l_val = st.session_state.get("f_l", [])
+        fotos_d_val = st.session_state.get("f_d", [])
+        fotos_m_val = st.session_state.get("f_m", [])
+        fotos_anexo_val = st.session_state.get("a_est", [])
+        firma_e_val = st.session_state.get("f_est", None)
+        df_est_val = st.session_state.df_dosis_est
+        df_med_est_val = st.session_state.df_meds_est
+
         try:
             pdf = PDF()
             pdf.add_page()
             
-            # --- INFO CLIENTE (LETRA 11 - MEJORA VISUAL) ---
             pdf.set_font("Arial", "", 11)
             pdf.cell(35, 7, "Cliente:", 0); pdf.cell(0, 7, str(cliente_e), 0, ln=1)
             pdf.cell(35, 7, "Dirección:", 0); pdf.cell(0, 7, str(direccion_e), 0, ln=1)
             pdf.cell(35, 7, "Tratamiento:", 0); pdf.cell(0, 7, f"{tipo_trat} - Plaga: {plaga_e}", 0, ln=1)
             pdf.cell(35, 7, "Fecha:", 0); pdf.cell(0, 7, format_fecha_es(fecha_e), 0, ln=1)
             
-            # 1. LIMPIEZA
             pdf.titulo_seccion("I", "PLAN DE SELLADO Y LIMPIEZA")
             pdf.set_font("Arial", "", 10)
             pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev} a las {hora_rev} horas.")
             pdf.ln(3)
             
-            # --- OBSERVACIONES (LETRA 11 ROJA) ---
             if hay_obs and txt_obs:
                 pdf.set_font("Arial", "B", 11)
                 pdf.set_text_color(200, 0, 0)
@@ -403,13 +417,12 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
             p_sel = ", ".join(est_sel) if est_sel else "No especificadas"
             pdf.set_font("Arial", "B", 10); pdf.cell(0, 6, f"Estructuras intervenidas: {p_sel}", ln=1)
-            if fotos_l: pdf.agregar_galeria_fotos(fotos_l, "Evidencia de Limpieza y Sellado:")
+            if fotos_l_val: pdf.agregar_galeria_fotos(fotos_l_val, "Evidencia de Limpieza y Sellado:")
             
-            # 2. DOSIS (SALTO PÁGINA)
             pdf.titulo_seccion("II", "VOLUMEN Y DOSIFICACIÓN", force_page=True)
             h_dosis = ["Estructura", "Vol(m3)", "Plac", "Rope", "Phos", "Dosis g/m3"]
             d_d_pdf = []; t_g = 0; t_v = 0
-            for _, row in df_est.iterrows():
+            for _, row in df_est_val.iterrows():
                 try:
                     v = clean_number(row.get("Volumen (m3)", 0))
                     n_pl = clean_number(row.get("Cant. Placas", 0)); n_ro = clean_number(row.get("Cant. Mini-Ropes", 0)); n_ph = clean_number(row.get("Cant. Phostoxin", 0))
@@ -421,29 +434,26 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             d_d_pdf.append(["TOTALES", f"{t_v:.1f}", "", "", "", ""])
             pdf.tabla_estilizada(h_dosis, d_d_pdf, [55, 25, 20, 20, 20, 30], bold_last_row=True)
             pdf.ln(2); pdf.set_font("Arial", "B", 10); pdf.cell(0, 6, f"Total Gas Generado: {t_g:.1f} gramos.", ln=1, align="R")
-            if fotos_d: pdf.agregar_galeria_fotos(fotos_d, "Evidencia de Dosificación:")
+            if fotos_d_val: pdf.agregar_galeria_fotos(fotos_d_val, "Evidencia de Dosificación:")
 
-            # 3. MEDICIONES (SALTO PÁGINA)
             pdf.titulo_seccion("III", "TIEMPOS Y MEDICIONES", force_page=True)
             pdf.tabla_estilizada(["Evento", "Fecha", "Hora", "Total Horas"], [["Inicio", str(f_ini_e), str(h_ini_e), f"{h_exp_e:.1f}"], ["Término", str(f_ter_e), str(h_ter_e), "---"]], [45, 45, 45, 45])
             pdf.ln(5); fig, ax = plt.subplots(figsize=(10, 5))
-            e_x = df_med_est["Fecha"].astype(str) + "\n" + df_med_est["Hora"].astype(str)
+            e_x = df_med_est_val["Fecha"].astype(str) + "\n" + df_med_est_val["Hora"].astype(str)
             h_g = False
-            for col in df_med_est.columns[2:]:
-                val = pd.to_numeric(df_med_est[col], errors='coerce').fillna(0)
+            for col in df_med_est_val.columns[2:]:
+                val = pd.to_numeric(df_med_est_val[col], errors='coerce').fillna(0)
                 if val.sum() > 0: ax.plot(e_x, val, marker='o', label=col); h_g = True
             ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
             if h_g: ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=5, frameon=False)
             plt.subplots_adjust(top=0.85); plt.tight_layout()
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_g:
                 fig.savefig(tmp_g.name, dpi=300); pdf.image(tmp_g.name, x=10, w=190)
-            pdf.ln(5); pdf.tabla_estilizada([str(c) for c in df_med_est.columns], [[str(x) for x in r] for _, r in df_med_est.iterrows()], [25, 20, 25, 25, 25, 25, 25])
-            if fotos_m: pdf.agregar_galeria_fotos(fotos_m, "Evidencia de Monitoreo:")
+            pdf.ln(5); pdf.tabla_estilizada([str(c) for c in df_med_est_val.columns], [[str(x) for x in r] for _, r in df_med_est_val.iterrows()], [25, 20, 25, 25, 25, 25, 25])
+            if fotos_m_val: pdf.agregar_galeria_fotos(fotos_m_val, "Evidencia de Monitoreo:")
 
-            # 4. ANEXO (SALTO PÁGINA)
-            if fotos_anexo_est: pdf.titulo_seccion("IV", "ANEXO FOTOGRÁFICO", force_page=True); pdf.agregar_galeria_fotos(fotos_anexo_est)
+            if fotos_anexo_val: pdf.titulo_seccion("IV", "ANEXO FOTOGRÁFICO", force_page=True); pdf.agregar_galeria_fotos(fotos_anexo_val)
 
-            # 5. CONCLUSIONES (SALTO PÁGINA + TEXTO REFINADO v9.8)
             pdf.titulo_seccion("V", "CONCLUSIONES TÉCNICAS", force_page=True)
             t_efic = f"asegurando el control biológico de {plaga_e} en todos sus estadios de desarrollo."
             if tipo_trat == "Preventivo":
@@ -459,11 +469,11 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             pdf.multi_cell(0, 6, c_text); pdf.ln(20)
 
             r_f_e = None
-            if firma_e: r_f_e = procesar_firma(firma_e)
+            if firma_e_val: r_f_e = procesar_firma(firma_e_val)
             elif os.path.exists('firma.png'): r_f_e = 'firma.png'
             if r_f_e:
                 pdf.image(r_f_e, x=75, w=60)
-                if firma_e and r_f_e != 'firma.png': os.remove(r_f_e)
+                if firma_e_val and r_f_e != 'firma.png': os.remove(r_f_e)
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_p:
                 pdf.output(tmp_p.name)
