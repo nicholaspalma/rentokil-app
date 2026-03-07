@@ -67,7 +67,7 @@ if "pdf_informe" not in st.session_state: st.session_state.pdf_informe = None
 if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 
-# Tablas Molinos (ESTÁTICAS PARA EVITAR BORRADOS)
+# Tablas Molinos 
 if "df_d_mol" not in st.session_state:
     st.session_state.df_d_mol = pd.DataFrame([
         {"Piso": "Subterráneo", "Bandejas": 10, "Mini-Ropes": 2}, {"Piso": "Piso 1", "Bandejas": 10, "Mini-Ropes": 2},
@@ -81,7 +81,7 @@ if "df_m_mol" not in st.session_state:
         for h in ["19:00", "00:00", "07:00", "13:00"]: d_m.append([f_s, h, 300, 310, 320, 305, 300, 290])
     st.session_state.df_m_mol = pd.DataFrame(d_m, columns=["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "Piso 5"])
 
-# Tablas Estructuras (COLUMNAS P1, P2... PARA EVITAR BORRADOS)
+# Tablas Estructuras 
 if "df_d_est" not in st.session_state:
     st.session_state.df_d_est = pd.DataFrame([{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}])
 if "nom_p" not in st.session_state: st.session_state.nom_p = ["Punto 1", "Punto 2", "Punto 3", "Punto 4", "Punto 5"]
@@ -130,9 +130,9 @@ def clean_number(value):
 
 def procesar_imagen(uploaded_file):
     """
-    ALGORITMO SMART CROP (Recorte Inteligente Centrado v12.2)
-    Garantiza estética ancha cuadrada (800x600), cortando equitativamente arriba y abajo
-    para no perder la zona central (donde suele estar el número del equipo Dräger).
+    NUEVO RECORTE (v12.3): Anclaje Inferior
+    Centering (0.5, 0.95) -> Corta TODO el techo/fondo y salva intacto el centro y abajo, 
+    manteniendo la imagen de un tamaño grande y estético.
     """
     try:
         uploaded_file.seek(0)
@@ -140,8 +140,8 @@ def procesar_imagen(uploaded_file):
         image = ImageOps.exif_transpose(image)
         if image.mode != 'RGB': image = image.convert('RGB')
         
-        # El centrado (0.5, 0.5) asegura que se recorte equitativamente desde los bordes, salvando el centro.
-        image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+        # El 0.95 le dice que ancle la foto casi abajo del todo, cortando desde arriba.
+        image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS, centering=(0.5, 0.95))
         
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         image_fixed.save(tmp.name, format='JPEG', quality=85, optimize=True)
@@ -674,7 +674,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
             c_text = (
                 "EVALUACIÓN DE EFICACIA:\n"
-                f"El análisis de los registros de monitoreo confirma que la concentración de Fosfina (PH3) se mantuvo por sobre el umbral crítico de 300 PPM durante las {h_exp_e:.1f} horas de exposición efectiva. Esta saturación constante garantiza una penetración total del gas en los puntos críticos de las structures, {t_efic}\n\n"
+                f"El análisis de los registros de monitoreo confirma que la concentración de Fosfina (PH3) se mantuvo por sobre el umbral crítico de 300 PPM durante las {h_exp_e:.1f} horas de exposición efectiva. Esta saturación constante garantiza una penetración total del gas en los puntos críticos de las estructuras, {t_efic}\n\n"
                 "CERTIFICACIÓN:\n"
                 "En consecuencia, el servicio se declara CONFORME, validando la bio-disponibilidad del ingrediente activo y el cumplimiento de los estándares técnicos de Rentokil Initial Chile."
             )
@@ -845,7 +845,7 @@ if st.session_state.app_mode in ["MOLINOS", "ESTRUCTURAS"]:
         st.success("✅ Documentos Generados Exitosamente")
         c_btn1, c_btn2 = st.columns(2)
         if st.session_state.pdf_informe is not None:
-            with c_btn1: st.download_button("📄 DESCARGAR INFORME", data=st.session_state.pdf_informe, file_name="Informe_Rentokil.pdf", mime="application/pdf", use_container_width=True)
+            with c_btn1: st.download_button("📄 DESCARGAR INFORME TÉCNICO", data=st.session_state.pdf_informe, file_name="Informe_Rentokil.pdf", mime="application/pdf", use_container_width=True)
         if st.session_state.pdf_cert is not None:
             with c_btn2: st.download_button("📜 DESCARGAR CERTIFICADO", data=st.session_state.pdf_cert, file_name="Certificado_Rentokil.pdf", mime="application/pdf", use_container_width=True)
 
