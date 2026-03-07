@@ -130,8 +130,9 @@ def clean_number(value):
 
 def procesar_imagen(uploaded_file):
     """
-    NUEVO ALGORITMO: Ajuste con Padding (Letterboxing)
-    Garantiza 0% de recorte para que los números de PPM siempre se vean.
+    ALGORITMO SMART CROP (Recorte Inteligente Centrado v12.2)
+    Garantiza estética ancha cuadrada (800x600), cortando equitativamente arriba y abajo
+    para no perder la zona central (donde suele estar el número del equipo Dräger).
     """
     try:
         uploaded_file.seek(0)
@@ -139,19 +140,12 @@ def procesar_imagen(uploaded_file):
         image = ImageOps.exif_transpose(image)
         if image.mode != 'RGB': image = image.convert('RGB')
         
-        target_size = (800, 600)
-        # Encoge la imagen respetando proporciones hasta que quepa en 800x600
-        image.thumbnail(target_size, Image.Resampling.LANCZOS)
-        
-        # Crea un lienzo blanco de 800x600 y pega la imagen encogida al centro
-        new_image = Image.new("RGB", target_size, (255, 255, 255))
-        paste_x = (target_size[0] - image.width) // 2
-        paste_y = (target_size[1] - image.height) // 2
-        new_image.paste(image, (paste_x, paste_y))
+        # El centrado (0.5, 0.5) asegura que se recorte equitativamente desde los bordes, salvando el centro.
+        image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
         
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        new_image.save(tmp.name, format='JPEG', quality=85, optimize=True)
-        image.close(); new_image.close(); del image; del new_image; gc.collect()
+        image_fixed.save(tmp.name, format='JPEG', quality=85, optimize=True)
+        image.close(); image_fixed.close(); del image; del image_fixed; gc.collect()
         return tmp.name
     except: return None
 
@@ -587,7 +581,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         h_ter_e = st.time_input("Hora Término", datetime.time(10, 0))
     h_exp_e = (datetime.datetime.combine(f_ter_e, h_ter_e) - datetime.datetime.combine(f_ini_e, h_ini_e)).total_seconds() / 3600
 
-    # SOLUCIÓN ESTRICTA TABLAS DE MEDICIÓN
     c_n = st.columns(5)
     n_cols_temp = ["Fecha", "Hora"]
     for i in range(5): 
@@ -681,7 +674,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
             c_text = (
                 "EVALUACIÓN DE EFICACIA:\n"
-                f"El análisis de los registros de monitoreo confirma que la concentración de Fosfina (PH3) se mantuvo por sobre el umbral crítico de 300 PPM durante las {h_exp_e:.1f} horas de exposición efectiva. Esta saturación constante garantiza una penetración total del gas en los puntos críticos de las estructuras, {t_efic}\n\n"
+                f"El análisis de los registros de monitoreo confirma que la concentración de Fosfina (PH3) se mantuvo por sobre el umbral crítico de 300 PPM durante las {h_exp_e:.1f} horas de exposición efectiva. Esta saturación constante garantiza una penetración total del gas en los puntos críticos de las structures, {t_efic}\n\n"
                 "CERTIFICACIÓN:\n"
                 "En consecuencia, el servicio se declara CONFORME, validando la bio-disponibilidad del ingrediente activo y el cumplimiento de los estándares técnicos de Rentokil Initial Chile."
             )
@@ -759,6 +752,7 @@ elif st.session_state.app_mode == "DIALOGO":
                 pdf.cell(0, 8, "REGISTRO FOTOGRÁFICO DE DIÁLOGO", ln=1, align="C")
                 pdf.set_text_color(0, 0, 0); pdf.ln(5)
                 
+                # Cuadros Modernos
                 pdf.tabla_moderna(["CLIENTE / RAZÓN SOCIAL", "PLANTA", "FECHA"], [[str(cli_d), str(pla_d), format_fecha_es(fec_d)]], [80, 70, 40], color=COLOR_PRIMARIO)
                 pdf.tabla_moderna(["DIRECCIÓN"], [[str(dir_d)]], [190], color=COLOR_PRIMARIO)
                 
