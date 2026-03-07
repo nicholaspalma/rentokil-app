@@ -67,7 +67,7 @@ if "pdf_informe" not in st.session_state: st.session_state.pdf_informe = None
 if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 
-# Tablas Molinos
+# Tablas Molinos (ESTÁTICAS PARA EVITAR BORRADOS)
 if "df_d_mol" not in st.session_state:
     st.session_state.df_d_mol = pd.DataFrame([
         {"Piso": "Subterráneo", "Bandejas": 10, "Mini-Ropes": 2}, {"Piso": "Piso 1", "Bandejas": 10, "Mini-Ropes": 2},
@@ -81,14 +81,14 @@ if "df_m_mol" not in st.session_state:
         for h in ["19:00", "00:00", "07:00", "13:00"]: d_m.append([f_s, h, 300, 310, 320, 305, 300, 290])
     st.session_state.df_m_mol = pd.DataFrame(d_m, columns=["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "Piso 5"])
 
-# Tablas Estructuras
+# Tablas Estructuras (COLUMNAS P1, P2... PARA EVITAR BORRADOS)
 if "df_d_est" not in st.session_state:
     st.session_state.df_d_est = pd.DataFrame([{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}])
 if "nom_p" not in st.session_state: st.session_state.nom_p = ["Punto 1", "Punto 2", "Punto 3", "Punto 4", "Punto 5"]
 if "df_m_est" not in st.session_state:
     d_me = []
     for i in range(3): d_me.append([(datetime.date.today() + datetime.timedelta(days=i)).strftime("%d-%m"), "10:00", 0, 0, 0, 0, 0])
-    st.session_state.df_m_est = pd.DataFrame(d_me, columns=["Fecha", "Hora"] + st.session_state.nom_p)
+    st.session_state.df_m_est = pd.DataFrame(d_me, columns=["Fecha", "Hora", "P1", "P2", "P3", "P4", "P5"])
 
 # --- BASES DE DATOS ---
 DATABASE_MOLINOS = {
@@ -129,18 +129,29 @@ def clean_number(value):
     return 0.0
 
 def procesar_imagen(uploaded_file):
+    """
+    NUEVO ALGORITMO: Ajuste con Padding (Letterboxing)
+    Garantiza 0% de recorte para que los números de PPM siempre se vean.
+    """
     try:
         uploaded_file.seek(0)
         image = Image.open(uploaded_file)
         image = ImageOps.exif_transpose(image)
         if image.mode != 'RGB': image = image.convert('RGB')
-        if image.width > 1200:
-            ratio = 1200 / float(image.width)
-            image = image.resize((1200, int(float(image.height) * float(ratio))), Image.Resampling.LANCZOS)
-        image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS)
+        
+        target_size = (800, 600)
+        # Encoge la imagen respetando proporciones hasta que quepa en 800x600
+        image.thumbnail(target_size, Image.Resampling.LANCZOS)
+        
+        # Crea un lienzo blanco de 800x600 y pega la imagen encogida al centro
+        new_image = Image.new("RGB", target_size, (255, 255, 255))
+        paste_x = (target_size[0] - image.width) // 2
+        paste_y = (target_size[1] - image.height) // 2
+        new_image.paste(image, (paste_x, paste_y))
+        
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        image_fixed.save(tmp.name, format='JPEG', quality=85, optimize=True)
-        image.close(); del image; gc.collect()
+        new_image.save(tmp.name, format='JPEG', quality=85, optimize=True)
+        image.close(); new_image.close(); del image; del new_image; gc.collect()
         return tmp.name
     except: return None
 
@@ -357,6 +368,13 @@ elif st.session_state.app_mode == "MOLINOS":
     with col3:
         fecha_inf = st.date_input("Fecha Informe/Emisión", datetime.date.today())
         volumen_total = st.number_input("Volumen Total (m³)", value=d.get("volumen", 0))
+    
+    col_t1, col_t2 = st.columns(2)
+    with col_t1:
+        tipo_trat = st.radio("Tipo de Tratamiento", ["Preventivo", "Curativo"], horizontal=True, key="tr_m")
+    with col_t2:
+        plaga = "N/A"
+        if tipo_trat == "Curativo": plaga = st.text_input("Plaga Objetivo", "Tribolium confusum", key="pl_m")
         
     st.markdown("**Datos para Certificado:**")
     cc1, cc2, cc3 = st.columns(3)
@@ -364,46 +382,53 @@ elif st.session_state.app_mode == "MOLINOS":
     with cc2: ingrediente = st.selectbox("Fumigante a Declarar", ["Fosfuro de Aluminio (AIP) 56%", "Fosfuro de Magnesio", "Mixto"])
     with cc3: inf_ref_mol = st.text_input("Informe Ref.", f"2026-{num_cert} NP")
 
-    st.subheader("II. Detalles Técnicos")
-    c3, c4 = st.columns(2)
-    with c3:
-        tipo_trat = st.radio("Tipo de Tratamiento", ["Preventivo", "Curativo"], horizontal=True, key="tr_m")
-        plaga = "N/A"
-        if tipo_trat == "Curativo": plaga = st.selectbox("Plaga Objetivo", ["Tribolium confusum", "Cryptolestes ferrugineus", "Gnathocerus cornutus", "Ephestia kuehniella", "Psócidos", "OTRA"])
-        sellado_ok = st.checkbox("Sellado Conforme", value=True)
-    with c4:
+    st.subheader("II. Plan de Sellado y Limpieza")
+    col_l1, col_l2 = st.columns(2)
+    with col_l1:
+        enc_l_mol = st.text_input("Encargado Limpieza (Cliente)", "Jefe de Planta")
         rep_r = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES)
+    with col_l2:
+        fecha_rev_mol = st.date_input("Fecha Revisión", datetime.date.today(), key="f_rev_m")
+        hora_rev_mol = st.time_input("Hora Revisión", datetime.time(10, 0), key="h_rev_m")
+    
+    hay_obs_mol = st.checkbox("⚠️ ¿Agregar observaciones de limpieza/mejoras?")
+    txt_obs_mol = st.text_area("Describa los hallazgos:", height=80) if hay_obs_mol else ""
+    fotos_sellado_mol = st.file_uploader("Subir fotos sellado/limpieza (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="fs_mol")
+
+    st.subheader("III. Tiempos de Fumigación")
+    col_ti1, col_ti2 = st.columns(2)
+    with col_ti1:
         f_ini = st.date_input("Inicio Inyección", datetime.date.today(), key="i_m")
         h_ini = st.time_input("Hora Inicio", datetime.time(19, 0), key="h_i_m")
+    with col_ti2:
         f_ter = st.date_input("Fin Ventilación", datetime.date.today() + datetime.timedelta(days=3), key="f_m")
         h_ter = st.time_input("Hora Término", datetime.time(19, 0), key="h_t_m")
-    
     horas_exp = (datetime.datetime.combine(f_ter, h_ter) - datetime.datetime.combine(f_ini, h_ini)).total_seconds() / 3600
-    
-    st.markdown("**📷 Evidencia de Limpieza / Sellado**")
-    fotos_sellado_mol = st.file_uploader("Subir fotos sellado (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="fs_mol")
 
-    st.subheader("III. Distribución y Dosis")
-    st.session_state.df_d_mol = st.data_editor(st.session_state.df_d_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_d")
+    st.subheader("IV. Distribución y Dosis")
+    df_d_mol_val = st.data_editor(st.session_state.df_d_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_d")
+    st.session_state.df_d_mol = df_d_mol_val
     fotos_dosis = st.file_uploader("Evidencia dosis (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_d_m")
     
-    total_g = (st.session_state.df_d_mol["Bandejas"].apply(clean_number).sum() * 500) + (st.session_state.df_d_mol["Mini-Ropes"].apply(clean_number).sum() * 333)
+    total_g = (df_d_mol_val["Bandejas"].apply(clean_number).sum() * 500) + (df_d_mol_val["Mini-Ropes"].apply(clean_number).sum() * 333)
     dosis_final = total_g / volumen_total if volumen_total > 0 else 0
 
-    st.subheader("IV. Mediciones")
-    st.session_state.df_m_mol = st.data_editor(st.session_state.df_m_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_m")
+    st.subheader("V. Mediciones")
+    df_m_mol_val = st.data_editor(st.session_state.df_m_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_m")
+    st.session_state.df_m_mol = df_m_mol_val
     fotos_meds = st.file_uploader("Evidencia de Monitoreo (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_m_m")
-    promedio_ppm = st.session_state.df_m_mol.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
+    promedio_ppm = df_m_mol_val.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
 
-    st.subheader("V. Anexo Fotográfico")
+    st.subheader("VI. Anexo Fotográfico")
     fotos_anexo = st.file_uploader("Fotos Generales", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_a_m")
     firma_file = st.file_uploader("Firma RT (Timbre)", type=["png", "jpg", "jpeg", "heic"], key="firm_m")
 
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
-        df_d_val = st.session_state.df_d_mol
-        df_m_val = st.session_state.df_m_mol
-
+        firma_path_guardada = None
         try:
+            firma_path_guardada = procesar_firma(firma_file) if firma_file else ('firma.png' if os.path.exists('firma.png') else None)
+            
+            # 1. INFORME MOLINOS
             pdf = InformePDF()
             pdf.add_page()
             pdf.set_font("Arial", "", 11)
@@ -412,11 +437,16 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.cell(35, 7, "Tratamiento:", 0); pdf.cell(0, 7, f"{tipo_trat} - Plaga: {plaga}", 0, ln=1)
             pdf.cell(35, 7, "Fecha:", 0); pdf.cell(0, 7, format_fecha_es(fecha_inf), 0, ln=1)
             
-            pdf.t_seccion("I", "SELLADO Y PLAGAS")
+            pdf.t_seccion("I", "PLAN DE SELLADO Y LIMPIEZA")
             pdf.set_font("Arial", "", 10)
-            status_sellado = 'CONFORME' if sellado_ok else 'OBSERVADO'
-            pdf.multi_cell(0, 6, f"Inspección de sellado en planta: {status_sellado}.\nSupervisión Cliente: Jefe de Planta | Visado Rentokil: {rep_r}.")
-            if fotos_sellado_mol: pdf.galeria(fotos_sellado_mol, "Evidencia de Sellado:")
+            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l_mol} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev_mol} a las {hora_rev_mol} horas.")
+            pdf.ln(3)
+            
+            if hay_obs_mol and txt_obs_mol:
+                pdf.set_font("Arial", "B", 11); pdf.set_text_color(200, 0, 0); pdf.cell(0, 7, "OBSERVACIONES / OPORTUNIDADES DE MEJORA DETECTADAS:", ln=1)
+                pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", "", 11); pdf.multi_cell(0, 6, txt_obs_mol); pdf.ln(3)
+
+            if fotos_sellado_mol: pdf.galeria(fotos_sellado_mol, "Evidencia de Limpieza y Sellado:")
             
             pdf.t_seccion("II", "VOLÚMENES Y TIEMPOS")
             pdf.multi_cell(0, 6, f"Volumen total tratado: {volumen_total} m3.\nTiempo de exposición efectivo: {horas_exp:.1f} horas.")
@@ -424,8 +454,8 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.tabla(["Evento", "Fecha", "Hora", "Total Horas"], [["Inyección", str(f_ini), str(h_ini), f"{horas_exp:.1f}"], ["Ventilación", str(f_ter), str(h_ter), "---"]], [45, 45, 45, 55])
             
             pdf.t_seccion("III", "DOSIFICACIÓN") 
-            d_p = [[str(r['Piso']), str(r['Bandejas']), str(r['Mini-Ropes'])] for _, r in df_d_val.iterrows()]
-            d_p.append(["TOTALES", str(int(df_d_val["Bandejas"].apply(clean_number).sum())), str(int(df_d_val["Mini-Ropes"].apply(clean_number).sum()))])
+            d_p = [[str(r['Piso']), str(r['Bandejas']), str(r['Mini-Ropes'])] for _, r in df_d_mol_val.iterrows()]
+            d_p.append(["TOTALES", str(int(df_d_mol_val["Bandejas"].apply(clean_number).sum())), str(int(df_d_mol_val["Mini-Ropes"].apply(clean_number).sum()))])
             pdf.tabla(["Sector", "Bandejas", "Mini-Ropes"], d_p, [80, 55, 55], bold_last=True)
             
             if fotos_dosis: pdf.galeria(fotos_dosis, "Evidencia de Dosificación:")
@@ -433,14 +463,14 @@ elif st.session_state.app_mode == "MOLINOS":
             
             pdf.t_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)", force=True)
             fig, ax = plt.subplots(figsize=(10, 5))
-            e_x = df_m_val["Fecha"].astype(str) + "\n" + df_m_val["Hora"].astype(str)
-            for col in df_m_val.columns[2:]: ax.plot(e_x, pd.to_numeric(df_m_val[col], errors='coerce'), marker='o', label=col)
+            e_x = df_m_mol_val["Fecha"].astype(str) + "\n" + df_m_mol_val["Hora"].astype(str)
+            for col in df_m_mol_val.columns[2:]: ax.plot(e_x, pd.to_numeric(df_m_mol_val[col], errors='coerce'), marker='o', label=col)
             ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
             ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False); plt.tight_layout()
             
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_g:
                 fig.savefig(tmp_g.name, dpi=300); pdf.image(tmp_g.name, x=10, w=190)
-            pdf.ln(5); pdf.tabla(list(df_m_val.columns), [[str(x) for x in r] for _, r in df_m_val.iterrows()], [25, 15, 25, 25, 25, 25, 25, 25])
+            pdf.ln(5); pdf.tabla(list(df_m_mol_val.columns), [[str(x) for x in r] for _, r in df_m_mol_val.iterrows()], [25, 15, 25, 25, 25, 25, 25, 25])
             
             if fotos_meds: pdf.galeria(fotos_meds, "Evidencia de Monitoreo:")
             if fotos_anexo: pdf.t_seccion("V", "ANEXO FOTOGRÁFICO", force=True); pdf.galeria(fotos_anexo)
@@ -458,12 +488,11 @@ elif st.session_state.app_mode == "MOLINOS":
             )
             pdf.set_font("Arial", "", 10); pdf.multi_cell(0, 6, c_text); pdf.ln(20)
             
-            firma_path = procesar_firma(firma_file) if firma_file else ('firma.png' if os.path.exists('firma.png') else None)
-            if firma_path:
+            if firma_path_guardada:
                 if pdf.get_y() > 240: pdf.add_page()
-                pdf.image(firma_path, x=75, w=60)
+                pdf.image(firma_path_guardada, x=75, w=60)
 
-            # CERTIFICADO MOLINOS
+            # 2. CERTIFICADO MOLINOS
             cert = CertificadoPDF()
             cert.add_page()
             cert.set_font("Arial", "B", 10)
@@ -480,17 +509,19 @@ elif st.session_state.app_mode == "MOLINOS":
             cert.ln(10); cert.set_font("Arial", "", 10)
             cert.multi_cell(0, 6, f"Se extiende el presente certificado N° {num_cert}, con fecha {format_fecha_es(fecha_inf)}, al interesado para los efectos que estime conveniente.")
             cert.ln(20)
-            if firma_path:
+            
+            if firma_path_guardada:
                 if cert.get_y() > 240: cert.add_page()
-                cert.image(firma_path, x=75, w=60)
+                cert.image(firma_path_guardada, x=75, w=60)
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as t1, tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as t2:
                 pdf.output(t1.name); cert.output(t2.name)
                 with open(t1.name, "rb") as f1: st.session_state.pdf_informe = f1.read()
                 with open(t2.name, "rb") as f2: st.session_state.pdf_cert = f2.read()
-                
-            if firma_path and firma_path != 'firma.png':
-                if os.path.exists(firma_path): os.remove(firma_path)
+            
+            if firma_path_guardada and firma_path_guardada != 'firma.png':
+                if os.path.exists(firma_path_guardada): os.remove(firma_path_guardada)
+
             st.rerun()
         except Exception as e: st.error(f"Error al generar documentos: {e}"); st.code(traceback.format_exc())
 
@@ -542,7 +573,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     fotos_l = st.file_uploader("Fotos sellado/limpieza", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
 
     st.subheader("III. Volumen y Dosis")
-    df_est_val = st.data_editor(st.session_state.df_d_est, num_rows="dynamic", use_container_width=True)
+    df_est_val = st.data_editor(st.session_state.df_d_est, num_rows="dynamic", use_container_width=True, key="edi_est_d")
     st.session_state.df_d_est = df_est_val
     fotos_d = st.file_uploader("Fotos dosificación", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
 
@@ -556,6 +587,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         h_ter_e = st.time_input("Hora Término", datetime.time(10, 0))
     h_exp_e = (datetime.datetime.combine(f_ter_e, h_ter_e) - datetime.datetime.combine(f_ini_e, h_ini_e)).total_seconds() / 3600
 
+    # SOLUCIÓN ESTRICTA TABLAS DE MEDICIÓN
     c_n = st.columns(5)
     n_cols_temp = ["Fecha", "Hora"]
     for i in range(5): 
@@ -563,11 +595,11 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         st.session_state.nom_p[i] = nom
         n_cols_temp.append(nom)
     
-    c_cols = list(st.session_state.df_m_est.columns)
-    if c_cols != n_cols_temp:
-        st.session_state.df_m_est.columns = n_cols_temp
-    
-    df_med_est_val = st.data_editor(st.session_state.df_m_est, num_rows="dynamic", use_container_width=True)
+    col_conf = {"Fecha": "Fecha", "Hora": "Hora"}
+    for i in range(5):
+        col_conf[f"P{i+1}"] = st.session_state.nom_p[i]
+        
+    df_med_est_val = st.data_editor(st.session_state.df_m_est, column_config=col_conf, num_rows="dynamic", use_container_width=True, key="edi_est_m")
     st.session_state.df_m_est = df_med_est_val
     fotos_m = st.file_uploader("Fotos mediciones", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
 
@@ -580,6 +612,9 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         try:
             firma_path_guardada = procesar_firma(firma_e) if firma_e else ('firma.png' if os.path.exists('firma.png') else None)
             
+            df_m_pdf = df_med_est_val.copy()
+            df_m_pdf.columns = ["Fecha", "Hora"] + st.session_state.nom_p
+
             # 1. INFORME ESTRUCTURAS
             pdf = InformePDF()
             pdf.add_page()
@@ -591,7 +626,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             
             pdf.t_seccion("I", "PLAN DE SELLADO Y LIMPIEZA")
             pdf.set_font("Arial", "", 10)
-            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev} a las {hora_rev} hours.")
+            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev} a las {hora_rev} horas.")
             pdf.ln(3)
             
             if hay_obs and txt_obs:
@@ -621,10 +656,10 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             pdf.t_seccion("III", "TIEMPOS Y MEDICIONES", force=True)
             pdf.tabla(["Evento", "Fecha", "Hora", "Total Horas"], [["Inicio", str(f_ini_e), str(h_ini_e), f"{h_exp_e:.1f}"], ["Término", str(f_ter_e), str(h_ter_e), "---"]], [45, 45, 45, 55])
             pdf.ln(5); fig, ax = plt.subplots(figsize=(10, 5))
-            e_x = df_med_est_val["Fecha"].astype(str) + "\n" + df_med_est_val["Hora"].astype(str)
+            e_x = df_m_pdf["Fecha"].astype(str) + "\n" + df_m_pdf["Hora"].astype(str)
             h_g = False
-            for col in df_med_est_val.columns[2:]:
-                val = pd.to_numeric(df_med_est_val[col], errors='coerce').fillna(0)
+            for col in df_m_pdf.columns[2:]:
+                val = pd.to_numeric(df_m_pdf[col], errors='coerce').fillna(0)
                 if val.sum() > 0: ax.plot(e_x, val, marker='o', label=col); h_g = True
             ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
             if h_g: ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=5, frameon=False)
@@ -632,10 +667,10 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_g:
                 fig.savefig(tmp_g.name, dpi=300); pdf.image(tmp_g.name, x=10, w=190)
-            pdf.ln(5); pdf.tabla([str(c) for c in df_med_est_val.columns], [[str(x) for x in r] for _, r in df_med_est_val.iterrows()], [25, 15, 30, 30, 30, 30, 30])
+            pdf.ln(5); pdf.tabla([str(c) for c in df_m_pdf.columns], [[str(x) for x in r] for _, r in df_m_pdf.iterrows()], [25, 15, 30, 30, 30, 30, 30])
             
             if fotos_m: pdf.galeria(fotos_m, "Evidencia de Monitoreo:")
-            promedio_ppm = df_med_est_val.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
+            promedio_ppm = df_m_pdf.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
 
             if fotos_a: pdf.t_seccion("IV", "ANEXO FOTOGRÁFICO", force=True); pdf.galeria(fotos_a)
 
@@ -656,7 +691,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 if pdf.get_y() > 240: pdf.add_page()
                 pdf.image(firma_path_guardada, x=75, w=60)
 
-            # CERTIFICADO ESTRUCTURAS
+            # 2. CERTIFICADO ESTRUCTURAS
             cert = CertificadoPDF()
             cert.add_page()
             cert.set_font("Arial", "B", 10)
@@ -724,7 +759,6 @@ elif st.session_state.app_mode == "DIALOGO":
                 pdf.cell(0, 8, "REGISTRO FOTOGRÁFICO DE DIÁLOGO", ln=1, align="C")
                 pdf.set_text_color(0, 0, 0); pdf.ln(5)
                 
-                # Cuadros Modernos
                 pdf.tabla_moderna(["CLIENTE / RAZÓN SOCIAL", "PLANTA", "FECHA"], [[str(cli_d), str(pla_d), format_fecha_es(fec_d)]], [80, 70, 40], color=COLOR_PRIMARIO)
                 pdf.tabla_moderna(["DIRECCIÓN"], [[str(dir_d)]], [190], color=COLOR_PRIMARIO)
                 
