@@ -4,3 +4,4 @@ matplotlib
 fpdf
 Pillow
 pillow-heif
+pdf2docx
