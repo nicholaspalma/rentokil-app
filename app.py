@@ -281,7 +281,7 @@ class CertificadoPDF(FPDF):
             except: pass
         self.set_font("Arial", "B", 10); self.set_text_color(100, 100, 100); self.set_y(10)
         self.cell(0, 5, "Rentokil Initial Chile SpA | RUT 76.360.903-0", ln=1, align="R")
-        self.set_font("Arial", "", 8); self.cell(0, 4, "Resolución Seremi de Salud N 372/16 del 20-06-2016", ln=1, align="R")
+        self.set_font("Arial", "", 8); self.cell(0, 4, "Resolución exenta N°2307418842 reg. Del Maule del 16-10 2023", ln=1, align="R")
         self.ln(10); self.set_draw_color(*COLOR_CELESTE_CLARO); self.set_line_width(0.8)
         self.line(10, self.get_y(), 200, self.get_y()); self.ln(5)
 
@@ -367,46 +367,43 @@ elif st.session_state.app_mode == "MOLINOS":
     st.subheader("II. Detalles Técnicos")
     c3, c4 = st.columns(2)
     with c3:
-        tipo_trat = st.radio("Tipo de Tratamiento", ["Preventivo", "Curativo"], horizontal=True)
+        tipo_trat = st.radio("Tipo de Tratamiento", ["Preventivo", "Curativo"], horizontal=True, key="tr_m")
         plaga = "N/A"
         if tipo_trat == "Curativo": plaga = st.selectbox("Plaga Objetivo", ["Tribolium confusum", "Cryptolestes ferrugineus", "Gnathocerus cornutus", "Ephestia kuehniella", "Psócidos", "OTRA"])
         sellado_ok = st.checkbox("Sellado Conforme", value=True)
     with c4:
         rep_r = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES)
-        f_ini = st.date_input("Inicio Inyección", datetime.date.today())
-        h_ini = st.time_input("Hora Inicio", datetime.time(19, 0))
-        f_ter = st.date_input("Fin Ventilación", datetime.date.today() + datetime.timedelta(days=3))
-        h_ter = st.time_input("Hora Término", datetime.time(19, 0))
+        f_ini = st.date_input("Inicio Inyección", datetime.date.today(), key="i_m")
+        h_ini = st.time_input("Hora Inicio", datetime.time(19, 0), key="h_i_m")
+        f_ter = st.date_input("Fin Ventilación", datetime.date.today() + datetime.timedelta(days=3), key="f_m")
+        h_ter = st.time_input("Hora Término", datetime.time(19, 0), key="h_t_m")
     
     horas_exp = (datetime.datetime.combine(f_ter, h_ter) - datetime.datetime.combine(f_ini, h_ini)).total_seconds() / 3600
     
     st.markdown("**📷 Evidencia de Limpieza / Sellado**")
-    fotos_sellado_mol = st.file_uploader("Subir fotos sellado (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
+    fotos_sellado_mol = st.file_uploader("Subir fotos sellado (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="fs_mol")
 
     st.subheader("III. Distribución y Dosis")
-    df_d_val = st.data_editor(st.session_state.df_d_mol, num_rows="dynamic", use_container_width=True)
-    st.session_state.df_d_mol = df_d_val
-    fotos_dosis = st.file_uploader("Evidencia dosis (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
+    st.session_state.df_d_mol = st.data_editor(st.session_state.df_d_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_d")
+    fotos_dosis = st.file_uploader("Evidencia dosis (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_d_m")
     
-    total_g = (df_d_val["Bandejas"].apply(clean_number).sum() * 500) + (df_d_val["Mini-Ropes"].apply(clean_number).sum() * 333)
+    total_g = (st.session_state.df_d_mol["Bandejas"].apply(clean_number).sum() * 500) + (st.session_state.df_d_mol["Mini-Ropes"].apply(clean_number).sum() * 333)
     dosis_final = total_g / volumen_total if volumen_total > 0 else 0
 
     st.subheader("IV. Mediciones")
-    df_m_val = st.data_editor(st.session_state.df_m_mol, num_rows="dynamic", use_container_width=True)
-    st.session_state.df_m_mol = df_m_val
-    fotos_meds = st.file_uploader("Evidencia de Monitoreo (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
-    promedio_ppm = df_m_val.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
+    st.session_state.df_m_mol = st.data_editor(st.session_state.df_m_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_m")
+    fotos_meds = st.file_uploader("Evidencia de Monitoreo (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_m_m")
+    promedio_ppm = st.session_state.df_m_mol.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
 
     st.subheader("V. Anexo Fotográfico")
-    fotos_anexo = st.file_uploader("Fotos Generales", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
-    firma_file = st.file_uploader("Firma RT (Timbre)", type=["png", "jpg", "jpeg", "heic"])
+    fotos_anexo = st.file_uploader("Fotos Generales", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_a_m")
+    firma_file = st.file_uploader("Firma RT (Timbre)", type=["png", "jpg", "jpeg", "heic"], key="firm_m")
 
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
-        firma_path_guardada = None
+        df_d_val = st.session_state.df_d_mol
+        df_m_val = st.session_state.df_m_mol
+
         try:
-            firma_path_guardada = procesar_firma(firma_file) if firma_file else ('firma.png' if os.path.exists('firma.png') else None)
-            
-            # 1. INFORME MOLINOS
             pdf = InformePDF()
             pdf.add_page()
             pdf.set_font("Arial", "", 11)
@@ -461,11 +458,12 @@ elif st.session_state.app_mode == "MOLINOS":
             )
             pdf.set_font("Arial", "", 10); pdf.multi_cell(0, 6, c_text); pdf.ln(20)
             
-            if firma_path_guardada:
+            firma_path = procesar_firma(firma_file) if firma_file else ('firma.png' if os.path.exists('firma.png') else None)
+            if firma_path:
                 if pdf.get_y() > 240: pdf.add_page()
-                pdf.image(firma_path_guardada, x=75, w=60)
+                pdf.image(firma_path, x=75, w=60)
 
-            # 2. CERTIFICADO MOLINOS
+            # CERTIFICADO MOLINOS
             cert = CertificadoPDF()
             cert.add_page()
             cert.set_font("Arial", "B", 10)
@@ -482,20 +480,17 @@ elif st.session_state.app_mode == "MOLINOS":
             cert.ln(10); cert.set_font("Arial", "", 10)
             cert.multi_cell(0, 6, f"Se extiende el presente certificado N° {num_cert}, con fecha {format_fecha_es(fecha_inf)}, al interesado para los efectos que estime conveniente.")
             cert.ln(20)
-            
-            if firma_path_guardada:
+            if firma_path:
                 if cert.get_y() > 240: cert.add_page()
-                cert.image(firma_path_guardada, x=75, w=60)
+                cert.image(firma_path, x=75, w=60)
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as t1, tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as t2:
                 pdf.output(t1.name); cert.output(t2.name)
                 with open(t1.name, "rb") as f1: st.session_state.pdf_informe = f1.read()
                 with open(t2.name, "rb") as f2: st.session_state.pdf_cert = f2.read()
-            
-            # Limpieza final segura de la firma
-            if firma_path_guardada and firma_path_guardada != 'firma.png':
-                if os.path.exists(firma_path_guardada): os.remove(firma_path_guardada)
-
+                
+            if firma_path and firma_path != 'firma.png':
+                if os.path.exists(firma_path): os.remove(firma_path)
             st.rerun()
         except Exception as e: st.error(f"Error al generar documentos: {e}"); st.code(traceback.format_exc())
 
@@ -568,7 +563,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         st.session_state.nom_p[i] = nom
         n_cols_temp.append(nom)
     
-    # Previene el borrado dinámico leyendo primero
     c_cols = list(st.session_state.df_m_est.columns)
     if c_cols != n_cols_temp:
         st.session_state.df_m_est.columns = n_cols_temp
@@ -597,7 +591,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             
             pdf.t_seccion("I", "PLAN DE SELLADO Y LIMPIEZA")
             pdf.set_font("Arial", "", 10)
-            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev} a las {hora_rev} horas.")
+            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev} a las {hora_rev} hours.")
             pdf.ln(3)
             
             if hay_obs and txt_obs:
@@ -662,7 +656,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 if pdf.get_y() > 240: pdf.add_page()
                 pdf.image(firma_path_guardada, x=75, w=60)
 
-            # 2. CERTIFICADO ESTRUCTURAS
+            # CERTIFICADO ESTRUCTURAS
             cert = CertificadoPDF()
             cert.add_page()
             cert.set_font("Arial", "B", 10)
@@ -688,7 +682,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 with open(t1.name, "rb") as f1: st.session_state.pdf_informe = f1.read()
                 with open(t2.name, "rb") as f2: st.session_state.pdf_cert = f2.read()
                 
-            # Limpieza final segura
             if firma_path_guardada and firma_path_guardada != 'firma.png':
                 if os.path.exists(firma_path_guardada): os.remove(firma_path_guardada)
                 
