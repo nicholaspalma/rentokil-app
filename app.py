@@ -34,6 +34,35 @@ COLOR_CELESTE_CLARO = (0, 160, 224)
 COLOR_TABLA_HEAD = (220, 220, 220)
 COLOR_TABLA_FILA = (255, 255, 255)
 
+# --- CSS PERSONALIZADO PARA BOTONES CORPORATIVOS ---
+st.markdown("""
+    <style>
+    /* Botones Primary (Rojo Rentokil) */
+    button[kind="primary"] {
+        background-color: #E30613 !important;
+        border-color: #E30613 !important;
+        color: white !important;
+        font-weight: bold !important;
+    }
+    button[kind="primary"]:hover {
+        background-color: #CC0510 !important;
+        border-color: #CC0510 !important;
+    }
+    /* Botones Secondary (Celeste Claro Rentokil) */
+    button[kind="secondary"] {
+        background-color: #00A0E0 !important;
+        border-color: #00A0E0 !important;
+        color: white !important;
+        font-weight: bold !important;
+    }
+    button[kind="secondary"]:hover {
+        background-color: #008BBF !important;
+        border-color: #008BBF !important;
+        color: white !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- GESTIÓN DE ESTADO (MEMORIA PROFUNDA) ---
 if "app_mode" not in st.session_state: st.session_state.app_mode = "HOME"
 if "pdf_informe" not in st.session_state: st.session_state.pdf_informe = None
@@ -118,21 +147,19 @@ def procesar_imagen(uploaded_file):
     except: return None
 
 def procesar_imagen_full(uploaded_file):
-    """Procesa imagen para el informe de diálogo (Pantalla Completa)"""
     try:
         uploaded_file.seek(0)
         image = Image.open(uploaded_file)
         image = ImageOps.exif_transpose(image)
         if image.mode != 'RGB': image = image.convert('RGB')
         
-        # Reducimos peso extremo para no colapsar RAM en caso de 50 fotos
         if image.width > 1600 or image.height > 1600:
             image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
             
         w, h = image.size
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         image.save(tmp.name, format='JPEG', quality=85, optimize=True)
-        image.close(); del image; gc.collect() # Limpieza estricta
+        image.close(); del image; gc.collect()
         return tmp.name, w, h
     except: return None, 0, 0
 
@@ -154,6 +181,40 @@ def procesar_firma(uploaded_file):
 # CLASE PDF: INFORME TÉCNICO Y DIÁLOGO
 # ==============================================================================
 class InformePDF(FPDF):
+    def rounded_rect(self, x, y, w, h, r, style=''):
+        """Permite dibujar cuadros modernos redondeados"""
+        k = self.k; hp = self.h
+        op = 'f' if style == 'F' else 'B' if style in ['FD', 'DF'] else 'S'
+        MyArc = 4/3 * (math.sqrt(2) - 1)
+        self._out(f'{(x+r)*k:.2f} {(hp-y)*k:.2f} m'); xc, yc = x+w-r, y+r; self._out(f'{xc*k:.2f} {(hp-y)*k:.2f} l')
+        self._out(f'{(xc+r*MyArc)*k:.2f} {(hp-y)*k:.2f} {(x+w)*k:.2f} {(hp-(yc-r*MyArc))*k:.2f} {(x+w)*k:.2f} {(hp-yc)*k:.2f} c')
+        xc, yc = x+w-r, y+h-r; self._out(f'{(x+w)*k:.2f} {(hp-yc)*k:.2f} l')
+        self._out(f'{(x+w)*k:.2f} {(hp-(yc+r*MyArc))*k:.2f} {(xc+r*MyArc)*k:.2f} {(hp-(y+h))*k:.2f} {xc*k:.2f} {(hp-(y+h))*k:.2f} c')
+        xc, yc = x+r, y+h-r; self._out(f'{xc*k:.2f} {(hp-(y+h))*k:.2f} l')
+        self._out(f'{(xc-r*MyArc)*k:.2f} {(hp-(y+h))*k:.2f} {x*k:.2f} {(hp-(yc+r*MyArc))*k:.2f} {x*k:.2f} {(hp-yc)*k:.2f} c')
+        xc, yc = x+r, y+r; self._out(f'{x*k:.2f} {(hp-yc)*k:.2f} l')
+        self._out(f'{x*k:.2f} {(hp-(yc-r*MyArc))*k:.2f} {(xc-r*MyArc)*k:.2f} {(hp-y)*k:.2f} {xc*k:.2f} {(hp-y)*k:.2f} c')
+        self._out(op)
+
+    def tabla_moderna(self, header, data, widths, color=COLOR_PRIMARIO):
+        """Genera una tabla con bordes redondeados y color personalizado"""
+        self.set_font("Arial", "B", 9)
+        self.set_fill_color(*color)
+        self.set_text_color(255, 255, 255)
+        x_start = self.get_x()
+        y_start = self.get_y()
+        self.rounded_rect(x_start, y_start, sum(widths), 7, 2, 'F')
+        for i, h in enumerate(header):
+            self.cell(widths[i], 7, h, border=0, align='C', fill=False)
+        self.ln()
+        self.set_font("Arial", "", 9)
+        self.set_text_color(0, 0, 0)
+        for row in data:
+            for i, d in enumerate(row):
+                self.cell(widths[i], 8, str(d), border='B', align='C', fill=False)
+            self.ln()
+        self.ln(3)
+
     def header(self):
         if os.path.exists('logo.png'):
             try: self.image('logo.png', 10, 8, 33)
@@ -197,7 +258,6 @@ class InformePDF(FPDF):
             if tmp:
                 if self.get_y() > 210: self.add_page(); self.set_y(45); i_mod = 0
                 else: i_mod = i % 2
-                
                 if i_mod == 0: y_act = self.get_y(); self.image(tmp, x=10, y=y_act, w=90, h=65)
                 else: self.image(tmp, x=110, y=y_act, w=90, h=65); self.ln(70)
                 os.remove(tmp)
@@ -273,10 +333,10 @@ if st.session_state.app_mode == "HOME":
     st.write("")
     c3, c4 = st.columns(2)
     with c3:
-        if st.button("📸 INFORME DE DIÁLOGO\n(Fotos a Pantalla Completa)", use_container_width=True):
+        if st.button("📸 INFORME DE DIÁLOGO\n(Fotos a Pantalla Completa)", use_container_width=True, type="secondary"):
             st.session_state.app_mode = "DIALOGO"; st.rerun()
     with c4:
-        if st.button("📄 CONVERTIR PDF A WORD\n(Transforma archivos)", use_container_width=True):
+        if st.button("📄 CONVERTIR PDF A WORD\n(Transforma archivos)", use_container_width=True, type="secondary"):
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
@@ -369,7 +429,7 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.ln(2)
             pdf.tabla(["Evento", "Fecha", "Hora", "Total Horas"], [["Inyección", str(f_ini), str(h_ini), f"{horas_exp:.1f}"], ["Ventilación", str(f_ter), str(h_ter), "---"]], [45, 45, 45, 55])
             
-            pdf.t_seccion("III", "DOSIFICACIÓN")
+            pdf.t_seccion("III", "DOSIFICACIÓN") 
             d_p = [[str(r['Piso']), str(r['Bandejas']), str(r['Mini-Ropes'])] for _, r in df_d_val.iterrows()]
             d_p.append(["TOTALES", str(int(df_d_val["Bandejas"].apply(clean_number).sum())), str(int(df_d_val["Mini-Ropes"].apply(clean_number).sum()))])
             pdf.tabla(["Sector", "Bandejas", "Mini-Ropes"], d_p, [80, 55, 55], bold_last=True)
@@ -407,9 +467,9 @@ elif st.session_state.app_mode == "MOLINOS":
             firma_path = procesar_firma(firma_file) if firma_file else ('firma.png' if os.path.exists('firma.png') else None)
             if firma_path:
                 if pdf.get_y() > 240: pdf.add_page()
-                pdf.image(firma_path, x=75, w=60); os.remove(firma_path) if firma_file else None
+                pdf.image(firma_path, x=75, w=60)
 
-            # CERTIFICADO
+            # CERTIFICADO MOLINOS
             cert = CertificadoPDF()
             cert.add_page()
             cert.set_font("Arial", "B", 10)
@@ -419,6 +479,7 @@ elif st.session_state.app_mode == "MOLINOS":
             
             cert.t_rojo("II. ANTECEDENTES SOBRE LA APLICACIÓN")
             cert.t_cert(["Área Tratada", "Volumen (m3)", "Fecha y Hora Fumigación / Ventilación"], [[planta, f"{volumen_total} m3", f"Inicio: {f_ini.strftime('%d-%m-%Y')} - {h_ini} Hrs\nTérmino: {f_ter.strftime('%d-%m-%Y')} - {h_ter} Hrs"]], [50, 30, 110])
+            
             cert.t_cert(["Tiempo Exp.", "Fumigante Usado", "Lugar Fumigación"], [[f"{horas_exp:.0f} Horas", ingrediente, direccion]], [30, 60, 100])
             cert.t_cert(["Dosis (g/m3)", "Concentración Promedio", "Informe Ref."], [[f"{dosis_final:.2f}", f"{promedio_ppm:.0f} PPM", inf_ref_mol]], [50, 70, 70])
             
@@ -592,7 +653,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 if pdf.get_y() > 240: pdf.add_page()
                 pdf.image(firma_path, x=75, w=60); os.remove(firma_path) if firma_e else None
 
-            # CERTIFICADO
+            # CERTIFICADO ESTRUCTURAS
             cert = CertificadoPDF()
             cert.add_page()
             cert.set_font("Arial", "B", 10)
@@ -644,7 +705,7 @@ elif st.session_state.app_mode == "DIALOGO":
         dir_d = st.text_input("Dirección", db_ref[op_d].get("direccion", ""))
         fec_d = st.date_input("Fecha", datetime.date.today())
         
-    fotos_dialogo = st.file_uploader("Sube TODAS las fotos aquí (Se recomiendan hasta 50)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
+    fotos_dialogo = st.file_uploader("Sube TODAS las fotos aquí (Soporta 50+ imágenes)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
     
     if st.button("🚀 GENERAR INFORME DE DIÁLOGO", use_container_width=True, type="primary"):
         if fotos_dialogo:
@@ -652,15 +713,13 @@ elif st.session_state.app_mode == "DIALOGO":
                 pdf = InformePDF()
                 pdf.add_page()
                 
-                pdf.set_font("Arial", "", 11)
-                pdf.cell(35, 7, "Cliente:", 0); pdf.cell(0, 7, str(cli_d), 0, ln=1)
-                pdf.cell(35, 7, "Planta:", 0); pdf.cell(0, 7, str(pla_d), 0, ln=1)
-                pdf.cell(35, 7, "Dirección:", 0); pdf.cell(0, 7, str(dir_d), 0, ln=1)
-                pdf.cell(35, 7, "Fecha:", 0); pdf.cell(0, 7, format_fecha_es(fec_d), 0, ln=1)
-                
                 pdf.ln(5); pdf.set_font("Arial", "B", 12); pdf.set_text_color(*COLOR_PRIMARIO)
                 pdf.cell(0, 8, "REGISTRO FOTOGRÁFICO DE DIÁLOGO", ln=1, align="C")
                 pdf.set_text_color(0, 0, 0); pdf.ln(5)
+                
+                # Cuadros Modernos
+                pdf.tabla_moderna(["CLIENTE / RAZÓN SOCIAL", "PLANTA", "FECHA"], [[str(cli_d), str(pla_d), format_fecha_es(fec_d)]], [80, 70, 40], color=COLOR_PRIMARIO)
+                pdf.tabla_moderna(["DIRECCIÓN"], [[str(dir_d)]], [190], color=COLOR_PRIMARIO)
                 
                 progress_text = "Procesando imágenes. Por favor espera..."
                 my_bar = st.progress(0, text=progress_text)
@@ -712,15 +771,12 @@ elif st.session_state.app_mode == "PDF2WORD":
     if not PDF2DOCX_INSTALLED:
         st.error("⚠️ Falta una librería en el servidor.")
         st.markdown("""
-        **Instrucciones para solucionarlo:**
-        1. Ve a tu cuenta de GitHub donde tienes el código.
-        2. Abre el archivo llamado `requirements.txt`.
-        3. Añade la palabra **`pdf2docx`** al final de la lista.
-        4. Guarda los cambios. Streamlit se reiniciará y funcionará.
+        **Instrucciones (IMPORTANTE):**
+        Para que esto funcione en tu celular y en la nube, ve a tu cuenta de GitHub, abre el archivo `requirements.txt` y asegúrate de que tenga escrita la palabra **`pdf2docx`**. Si no está, agrégala y guarda los cambios.
         """)
     else:
-        st.markdown("Sube cualquier PDF tal cual lo tienes en el celular. El sistema internamente generará una copia idéntica en Word (`.docx`). **¡No necesitas cambiarle el nombre a nada!**")
-        uploaded_pdf = st.file_uploader("Selecciona el archivo PDF", type=['pdf'])
+        st.markdown("Sube tu archivo `.pdf` y descárgalo instantáneamente como `.docx`. **No necesitas cambiar ningún nombre, la aplicación lo hace por ti.**")
+        uploaded_pdf = st.file_uploader("Selecciona tu documento", type=['pdf'])
         
         if uploaded_pdf and st.button("🔄 CONVERTIR A WORD", use_container_width=True, type="primary"):
             with st.spinner("Convirtiendo documento... Esto puede tardar unos segundos..."):
@@ -730,7 +786,6 @@ elif st.session_state.app_mode == "PDF2WORD":
                         pdf_path = t_pdf.name
                     
                     docx_path = pdf_path.replace(".pdf", ".docx")
-                    
                     cv = Converter(pdf_path)
                     cv.convert(docx_path)
                     cv.close()
@@ -745,7 +800,7 @@ elif st.session_state.app_mode == "PDF2WORD":
                             use_container_width=True
                         )
                 except Exception as e:
-                    st.error(f"Hubo un error durante la conversión. Asegúrate de que el PDF no esté protegido por contraseña. Error técnico: {e}")
+                    st.error(f"Hubo un error durante la conversión. Asegúrate de que el PDF no esté protegido con clave. Detalle: {e}")
 
 # ==============================================================================
 # BOTONES DE DESCARGA GLOBALES
@@ -755,7 +810,7 @@ if st.session_state.app_mode in ["MOLINOS", "ESTRUCTURAS"]:
         st.success("✅ Documentos Generados Exitosamente")
         c_btn1, c_btn2 = st.columns(2)
         if st.session_state.pdf_informe is not None:
-            with c_btn1: st.download_button("📄 DESCARGAR INFORME TÉCNICO", data=st.session_state.pdf_informe, file_name="Informe_Rentokil.pdf", mime="application/pdf", use_container_width=True)
+            with c_btn1: st.download_button("📄 DESCARGAR INFORME", data=st.session_state.pdf_informe, file_name="Informe_Rentokil.pdf", mime="application/pdf", use_container_width=True)
         if st.session_state.pdf_cert is not None:
             with c_btn2: st.download_button("📜 DESCARGAR CERTIFICADO", data=st.session_state.pdf_cert, file_name="Certificado_Rentokil.pdf", mime="application/pdf", use_container_width=True)
 
