@@ -37,7 +37,6 @@ COLOR_TABLA_FILA = (255, 255, 255)
 # --- CSS PERSONALIZADO PARA BOTONES CORPORATIVOS ---
 st.markdown("""
     <style>
-    /* Botones Primary (Rojo Rentokil) */
     button[kind="primary"] {
         background-color: #E30613 !important;
         border-color: #E30613 !important;
@@ -48,7 +47,6 @@ st.markdown("""
         background-color: #CC0510 !important;
         border-color: #CC0510 !important;
     }
-    /* Botones Secondary (Celeste Claro Rentokil) */
     button[kind="secondary"] {
         background-color: #00A0E0 !important;
         border-color: #00A0E0 !important;
@@ -152,10 +150,8 @@ def procesar_imagen_full(uploaded_file):
         image = Image.open(uploaded_file)
         image = ImageOps.exif_transpose(image)
         if image.mode != 'RGB': image = image.convert('RGB')
-        
         if image.width > 1600 or image.height > 1600:
             image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
-            
         w, h = image.size
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         image.save(tmp.name, format='JPEG', quality=85, optimize=True)
@@ -182,7 +178,6 @@ def procesar_firma(uploaded_file):
 # ==============================================================================
 class InformePDF(FPDF):
     def rounded_rect(self, x, y, w, h, r, style=''):
-        """Permite dibujar cuadros modernos redondeados"""
         k = self.k; hp = self.h
         op = 'f' if style == 'F' else 'B' if style in ['FD', 'DF'] else 'S'
         MyArc = 4/3 * (math.sqrt(2) - 1)
@@ -197,7 +192,6 @@ class InformePDF(FPDF):
         self._out(op)
 
     def tabla_moderna(self, header, data, widths, color=COLOR_PRIMARIO):
-        """Genera una tabla con bordes redondeados y color personalizado"""
         self.set_font("Arial", "B", 9)
         self.set_fill_color(*color)
         self.set_text_color(255, 255, 255)
@@ -373,43 +367,46 @@ elif st.session_state.app_mode == "MOLINOS":
     st.subheader("II. Detalles Técnicos")
     c3, c4 = st.columns(2)
     with c3:
-        tipo_trat = st.radio("Tipo de Tratamiento", ["Preventivo", "Curativo"], horizontal=True, key="tr_m")
+        tipo_trat = st.radio("Tipo de Tratamiento", ["Preventivo", "Curativo"], horizontal=True)
         plaga = "N/A"
         if tipo_trat == "Curativo": plaga = st.selectbox("Plaga Objetivo", ["Tribolium confusum", "Cryptolestes ferrugineus", "Gnathocerus cornutus", "Ephestia kuehniella", "Psócidos", "OTRA"])
         sellado_ok = st.checkbox("Sellado Conforme", value=True)
     with c4:
         rep_r = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES)
-        f_ini = st.date_input("Inicio Inyección", datetime.date.today(), key="i_m")
-        h_ini = st.time_input("Hora Inicio", datetime.time(19, 0), key="h_i_m")
-        f_ter = st.date_input("Fin Ventilación", datetime.date.today() + datetime.timedelta(days=3), key="f_m")
-        h_ter = st.time_input("Hora Término", datetime.time(19, 0), key="h_t_m")
+        f_ini = st.date_input("Inicio Inyección", datetime.date.today())
+        h_ini = st.time_input("Hora Inicio", datetime.time(19, 0))
+        f_ter = st.date_input("Fin Ventilación", datetime.date.today() + datetime.timedelta(days=3))
+        h_ter = st.time_input("Hora Término", datetime.time(19, 0))
     
     horas_exp = (datetime.datetime.combine(f_ter, h_ter) - datetime.datetime.combine(f_ini, h_ini)).total_seconds() / 3600
     
     st.markdown("**📷 Evidencia de Limpieza / Sellado**")
-    fotos_sellado_mol = st.file_uploader("Subir fotos sellado (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="fs_mol")
+    fotos_sellado_mol = st.file_uploader("Subir fotos sellado (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
 
     st.subheader("III. Distribución y Dosis")
-    st.session_state.df_d_mol = st.data_editor(st.session_state.df_d_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_d")
-    fotos_dosis = st.file_uploader("Evidencia dosis (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_d_m")
+    df_d_val = st.data_editor(st.session_state.df_d_mol, num_rows="dynamic", use_container_width=True)
+    st.session_state.df_d_mol = df_d_val
+    fotos_dosis = st.file_uploader("Evidencia dosis (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
     
-    total_g = (st.session_state.df_d_mol["Bandejas"].apply(clean_number).sum() * 500) + (st.session_state.df_d_mol["Mini-Ropes"].apply(clean_number).sum() * 333)
+    total_g = (df_d_val["Bandejas"].apply(clean_number).sum() * 500) + (df_d_val["Mini-Ropes"].apply(clean_number).sum() * 333)
     dosis_final = total_g / volumen_total if volumen_total > 0 else 0
 
     st.subheader("IV. Mediciones")
-    st.session_state.df_m_mol = st.data_editor(st.session_state.df_m_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_m")
-    fotos_meds = st.file_uploader("Evidencia de Monitoreo (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_m_m")
-    promedio_ppm = st.session_state.df_m_mol.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
+    df_m_val = st.data_editor(st.session_state.df_m_mol, num_rows="dynamic", use_container_width=True)
+    st.session_state.df_m_mol = df_m_val
+    fotos_meds = st.file_uploader("Evidencia de Monitoreo (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
+    promedio_ppm = df_m_val.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
 
     st.subheader("V. Anexo Fotográfico")
-    fotos_anexo = st.file_uploader("Fotos Generales", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_a_m")
-    firma_file = st.file_uploader("Firma RT (Timbre)", type=["png", "jpg", "jpeg", "heic"], key="firm_m")
+    fotos_anexo = st.file_uploader("Fotos Generales", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
+    firma_file = st.file_uploader("Firma RT (Timbre)", type=["png", "jpg", "jpeg", "heic"])
 
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
-        df_d_val = st.session_state.df_d_mol
-        df_m_val = st.session_state.df_m_mol
-
+        firma_path_guardada = None
         try:
+            firma_path_guardada = procesar_firma(firma_file) if firma_file else ('firma.png' if os.path.exists('firma.png') else None)
+            
+            # 1. INFORME MOLINOS
             pdf = InformePDF()
             pdf.add_page()
             pdf.set_font("Arial", "", 11)
@@ -464,12 +461,11 @@ elif st.session_state.app_mode == "MOLINOS":
             )
             pdf.set_font("Arial", "", 10); pdf.multi_cell(0, 6, c_text); pdf.ln(20)
             
-            firma_path = procesar_firma(firma_file) if firma_file else ('firma.png' if os.path.exists('firma.png') else None)
-            if firma_path:
+            if firma_path_guardada:
                 if pdf.get_y() > 240: pdf.add_page()
-                pdf.image(firma_path, x=75, w=60)
+                pdf.image(firma_path_guardada, x=75, w=60)
 
-            # CERTIFICADO MOLINOS
+            # 2. CERTIFICADO MOLINOS
             cert = CertificadoPDF()
             cert.add_page()
             cert.set_font("Arial", "B", 10)
@@ -486,14 +482,20 @@ elif st.session_state.app_mode == "MOLINOS":
             cert.ln(10); cert.set_font("Arial", "", 10)
             cert.multi_cell(0, 6, f"Se extiende el presente certificado N° {num_cert}, con fecha {format_fecha_es(fecha_inf)}, al interesado para los efectos que estime conveniente.")
             cert.ln(20)
-            if firma_path:
+            
+            if firma_path_guardada:
                 if cert.get_y() > 240: cert.add_page()
-                cert.image(firma_path, x=75, w=60)
+                cert.image(firma_path_guardada, x=75, w=60)
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as t1, tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as t2:
                 pdf.output(t1.name); cert.output(t2.name)
                 with open(t1.name, "rb") as f1: st.session_state.pdf_informe = f1.read()
                 with open(t2.name, "rb") as f2: st.session_state.pdf_cert = f2.read()
+            
+            # Limpieza final segura de la firma
+            if firma_path_guardada and firma_path_guardada != 'firma.png':
+                if os.path.exists(firma_path_guardada): os.remove(firma_path_guardada)
+
             st.rerun()
         except Exception as e: st.error(f"Error al generar documentos: {e}"); st.code(traceback.format_exc())
 
@@ -542,11 +544,12 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     
     hay_obs = st.checkbox("⚠️ ¿Agregar observaciones de limpieza?")
     txt_obs = st.text_area("Hallazgos:", height=80) if hay_obs else ""
-    fotos_l = st.file_uploader("Fotos sellado/limpieza", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="fl")
+    fotos_l = st.file_uploader("Fotos sellado/limpieza", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
 
     st.subheader("III. Volumen y Dosis")
-    st.session_state.df_d_est = st.data_editor(st.session_state.df_d_est, num_rows="dynamic", use_container_width=True, key="edi_est_d")
-    fotos_d = st.file_uploader("Fotos dosificación", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="fd")
+    df_est_val = st.data_editor(st.session_state.df_d_est, num_rows="dynamic", use_container_width=True)
+    st.session_state.df_d_est = df_est_val
+    fotos_d = st.file_uploader("Fotos dosificación", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
 
     st.subheader("IV. Tiempos y Mediciones")
     col_t1, col_t2 = st.columns(2)
@@ -559,24 +562,31 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     h_exp_e = (datetime.datetime.combine(f_ter_e, h_ter_e) - datetime.datetime.combine(f_ini_e, h_ini_e)).total_seconds() / 3600
 
     c_n = st.columns(5)
-    for i in range(5): st.session_state.nom_p[i] = c_n[i].text_input(f"Punto {i+1}", st.session_state.nom_p[i], key=f"np_{i}")
+    n_cols_temp = ["Fecha", "Hora"]
+    for i in range(5): 
+        nom = c_n[i].text_input(f"Punto {i+1}", st.session_state.nom_p[i])
+        st.session_state.nom_p[i] = nom
+        n_cols_temp.append(nom)
     
+    # Previene el borrado dinámico leyendo primero
     c_cols = list(st.session_state.df_m_est.columns)
-    n_cols = ["Fecha", "Hora"] + st.session_state.nom_p
-    if c_cols != n_cols: st.session_state.df_m_est.columns = n_cols
+    if c_cols != n_cols_temp:
+        st.session_state.df_m_est.columns = n_cols_temp
     
-    st.session_state.df_m_est = st.data_editor(st.session_state.df_m_est, num_rows="dynamic", use_container_width=True, key="edi_est_m")
-    fotos_m = st.file_uploader("Fotos mediciones", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="fm")
+    df_med_est_val = st.data_editor(st.session_state.df_m_est, num_rows="dynamic", use_container_width=True)
+    st.session_state.df_m_est = df_med_est_val
+    fotos_m = st.file_uploader("Fotos mediciones", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
 
     st.subheader("V. Anexo Fotográfico")
-    fotos_a = st.file_uploader("Otras fotos", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="fa")
-    firma_e = st.file_uploader("Firma RT (Timbre)", type=["png", "jpg", "jpeg", "heic"], key="fe")
+    fotos_a = st.file_uploader("Otras fotos", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
+    firma_e = st.file_uploader("Firma RT (Timbre)", type=["png", "jpg", "jpeg", "heic"])
 
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
-        df_est_val = st.session_state.df_d_est
-        df_med_est_val = st.session_state.df_m_est
-
+        firma_path_guardada = None
         try:
+            firma_path_guardada = procesar_firma(firma_e) if firma_e else ('firma.png' if os.path.exists('firma.png') else None)
+            
+            # 1. INFORME ESTRUCTURAS
             pdf = InformePDF()
             pdf.add_page()
             pdf.set_font("Arial", "", 11)
@@ -648,12 +658,11 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             )
             pdf.set_font("Arial", "", 10); pdf.multi_cell(0, 6, c_text); pdf.ln(20)
 
-            firma_path = procesar_firma(firma_e) if firma_e else ('firma.png' if os.path.exists('firma.png') else None)
-            if firma_path:
+            if firma_path_guardada:
                 if pdf.get_y() > 240: pdf.add_page()
-                pdf.image(firma_path, x=75, w=60); os.remove(firma_path) if firma_e else None
+                pdf.image(firma_path_guardada, x=75, w=60)
 
-            # CERTIFICADO ESTRUCTURAS
+            # 2. CERTIFICADO ESTRUCTURAS
             cert = CertificadoPDF()
             cert.add_page()
             cert.set_font("Arial", "B", 10)
@@ -670,14 +679,19 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             cert.ln(10); cert.set_font("Arial", "", 10)
             cert.multi_cell(0, 6, f"Se extiende el presente certificado N° {num_cert}, con fecha {format_fecha_es(fecha_e)}, al interesado para los efectos que estime conveniente.")
             cert.ln(20)
-            if firma_path:
+            if firma_path_guardada:
                 if cert.get_y() > 240: cert.add_page()
-                cert.image(firma_path, x=75, w=60)
+                cert.image(firma_path_guardada, x=75, w=60)
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as t1, tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as t2:
                 pdf.output(t1.name); cert.output(t2.name)
                 with open(t1.name, "rb") as f1: st.session_state.pdf_informe = f1.read()
                 with open(t2.name, "rb") as f2: st.session_state.pdf_cert = f2.read()
+                
+            # Limpieza final segura
+            if firma_path_guardada and firma_path_guardada != 'firma.png':
+                if os.path.exists(firma_path_guardada): os.remove(firma_path_guardada)
+                
             st.rerun()
         except Exception as e: st.error(f"Error al generar documentos: {e}"); st.code(traceback.format_exc())
 
@@ -775,7 +789,7 @@ elif st.session_state.app_mode == "PDF2WORD":
         Para que esto funcione en tu celular y en la nube, ve a tu cuenta de GitHub, abre el archivo `requirements.txt` y asegúrate de que tenga escrita la palabra **`pdf2docx`**. Si no está, agrégala y guarda los cambios.
         """)
     else:
-        st.markdown("Sube tu archivo `.pdf` y descárgalo instantáneamente como `.docx`. **No necesitas cambiar ningún nombre, la aplicación lo hace por ti.**")
+        st.markdown("Sube cualquier PDF tal cual lo tienes en el celular. El sistema internamente generará una copia idéntica en Word (`.docx`). **No necesitas cambiar ningún nombre, la aplicación lo hace por ti.**")
         uploaded_pdf = st.file_uploader("Selecciona tu documento", type=['pdf'])
         
         if uploaded_pdf and st.button("🔄 CONVERTIR A WORD", use_container_width=True, type="primary"):
