@@ -9,6 +9,7 @@ import math
 from PIL import Image, ImageOps, ImageFile
 import traceback
 import gc
+import numpy as np
 
 # --- CONFIGURACIÓN PARA IMÁGENES ROTAS ---
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -67,7 +68,7 @@ if "pdf_informe" not in st.session_state: st.session_state.pdf_informe = None
 if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 
-# Tablas Molinos 
+# Tablas Molinos (ESTÁTICAS PARA EVITAR BORRADOS FANTASMA)
 if "df_d_mol" not in st.session_state:
     st.session_state.df_d_mol = pd.DataFrame([
         {"Piso": "Subterráneo", "Bandejas": 10, "Mini-Ropes": 2}, {"Piso": "Piso 1", "Bandejas": 10, "Mini-Ropes": 2},
@@ -81,7 +82,7 @@ if "df_m_mol" not in st.session_state:
         for h in ["19:00", "00:00", "07:00", "13:00"]: d_m.append([f_s, h, 300, 310, 320, 305, 300, 290])
     st.session_state.df_m_mol = pd.DataFrame(d_m, columns=["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "Piso 5"])
 
-# Tablas Estructuras 
+# Tablas Estructuras (COLUMNAS P1, P2... PARA EVITAR BORRADOS FANTASMA)
 if "df_d_est" not in st.session_state:
     st.session_state.df_d_est = pd.DataFrame([{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}])
 if "nom_p" not in st.session_state: st.session_state.nom_p = ["Punto 1", "Punto 2", "Punto 3", "Punto 4", "Punto 5"]
@@ -129,18 +130,12 @@ def clean_number(value):
     return 0.0
 
 def procesar_imagen(uploaded_file):
-    """
-    NUEVO RECORTE (v12.3): Anclaje Inferior
-    Centering (0.5, 0.95) -> Corta TODO el techo/fondo y salva intacto el centro y abajo, 
-    manteniendo la imagen de un tamaño grande y estético.
-    """
     try:
         uploaded_file.seek(0)
         image = Image.open(uploaded_file)
         image = ImageOps.exif_transpose(image)
         if image.mode != 'RGB': image = image.convert('RGB')
         
-        # El 0.95 le dice que ancle la foto casi abajo del todo, cortando desde arriba.
         image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS, centering=(0.5, 0.95))
         
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
@@ -400,18 +395,17 @@ elif st.session_state.app_mode == "MOLINOS":
     horas_exp = (datetime.datetime.combine(f_ter, h_ter) - datetime.datetime.combine(f_ini, h_ini)).total_seconds() / 3600
 
     st.subheader("IV. Distribución y Dosis")
+    # Tabla desconectada del guardado dinámico para evitar borrado fantasma
     df_d_mol_val = st.data_editor(st.session_state.df_d_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_d")
-    st.session_state.df_d_mol = df_d_mol_val
     fotos_dosis = st.file_uploader("Evidencia dosis (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_d_m")
     
     total_g = (df_d_mol_val["Bandejas"].apply(clean_number).sum() * 500) + (df_d_mol_val["Mini-Ropes"].apply(clean_number).sum() * 333)
     dosis_final = total_g / volumen_total if volumen_total > 0 else 0
 
     st.subheader("V. Mediciones")
+    # Tabla desconectada del guardado dinámico para evitar borrado fantasma
     df_m_mol_val = st.data_editor(st.session_state.df_m_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_m")
-    st.session_state.df_m_mol = df_m_mol_val
     fotos_meds = st.file_uploader("Evidencia de Monitoreo (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_m_m")
-    promedio_ppm = df_m_mol_val.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
 
     st.subheader("VI. Anexo Fotográfico")
     fotos_anexo = st.file_uploader("Fotos Generales", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_a_m")
@@ -458,13 +452,26 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.t_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)", force=True)
             fig, ax = plt.subplots(figsize=(10, 5))
             e_x = df_m_mol_val["Fecha"].astype(str) + "\n" + df_m_mol_val["Hora"].astype(str)
-            for col in df_m_mol_val.columns[2:]: ax.plot(e_x, pd.to_numeric(df_m_mol_val[col], errors='coerce'), marker='o', label=col)
+            h_g = False
+            
+            # Recorrido por posición para evitar crasheos si hay nombres duplicados
+            for i in range(2, len(df_m_mol_val.columns)):
+                col_name = df_m_mol_val.columns[i]
+                val = pd.to_numeric(df_m_mol_val.iloc[:, i], errors='coerce').fillna(0)
+                if val.sum() > 0:
+                    ax.plot(e_x, val, marker='o', label=col_name)
+                    h_g = True
+                    
             ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
-            ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False); plt.tight_layout()
+            if h_g: ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False)
+            plt.tight_layout()
             
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_g:
                 fig.savefig(tmp_g.name, dpi=300); pdf.image(tmp_g.name, x=10, w=190)
-            pdf.ln(5); pdf.tabla(list(df_m_mol_val.columns), [[str(x) for x in r] for _, r in df_m_mol_val.iterrows()], [25, 15, 25, 25, 25, 25, 25, 25])
+            pdf.ln(5)
+            
+            cols_list = list(df_m_mol_val.columns)
+            pdf.tabla(cols_list, [[str(x) for x in r] for _, r in df_m_mol_val.iterrows()], [25, 15] + [25]* (len(cols_list)-2))
             
             if fotos_meds: pdf.galeria(fotos_meds, "Evidencia de Monitoreo:")
             if fotos_anexo: pdf.t_seccion("V", "ANEXO FOTOGRÁFICO", force=True); pdf.galeria(fotos_anexo)
@@ -487,6 +494,11 @@ elif st.session_state.app_mode == "MOLINOS":
                 pdf.image(firma_path_guardada, x=75, w=60)
 
             # 2. CERTIFICADO MOLINOS
+            # Cálculo seguro del promedio con matriz matemática pura
+            flat_vals = df_m_mol_val.iloc[:, 2:].values.flatten()
+            promedio_ppm = pd.to_numeric(pd.Series(flat_vals), errors='coerce').dropna().mean()
+            promedio_ppm = 0 if pd.isna(promedio_ppm) else promedio_ppm
+
             cert = CertificadoPDF()
             cert.add_page()
             cert.set_font("Arial", "B", 10)
@@ -550,7 +562,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     cc1, cc2, cc3 = st.columns(3)
     with cc1: num_cert = st.text_input("N° Certificado", "28252")
     with cc2: ingrediente = st.selectbox("Fumigante a Declarar", ["Fosfuro de Aluminio (AIP) 56%", "Fosfuro de Magnesio", "Mixto"])
-    with cc3: inf_ref_est = st.text_input("Informe Ref.", f"2026-{num_cert} NP")
+    with cc3: inf_ref_est = text_input_ref = st.text_input("Informe Ref.", f"2026-{num_cert} NP")
 
     st.subheader("II. Plan de Sellado y Limpieza")
     col_l1, col_l2 = st.columns(2)
@@ -568,7 +580,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
     st.subheader("III. Volumen y Dosis")
     df_est_val = st.data_editor(st.session_state.df_d_est, num_rows="dynamic", use_container_width=True, key="edi_est_d")
-    st.session_state.df_d_est = df_est_val
     fotos_d = st.file_uploader("Fotos dosificación", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
 
     st.subheader("IV. Tiempos y Mediciones")
@@ -592,8 +603,8 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     for i in range(5):
         col_conf[f"P{i+1}"] = st.session_state.nom_p[i]
         
+    # Tabla desconectada para evitar reseteos visuales
     df_med_est_val = st.data_editor(st.session_state.df_m_est, column_config=col_conf, num_rows="dynamic", use_container_width=True, key="edi_est_m")
-    st.session_state.df_m_est = df_med_est_val
     fotos_m = st.file_uploader("Fotos mediciones", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
 
     st.subheader("V. Anexo Fotográfico")
@@ -651,20 +662,27 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             pdf.ln(5); fig, ax = plt.subplots(figsize=(10, 5))
             e_x = df_m_pdf["Fecha"].astype(str) + "\n" + df_m_pdf["Hora"].astype(str)
             h_g = False
-            for col in df_m_pdf.columns[2:]:
-                val = pd.to_numeric(df_m_pdf[col], errors='coerce').fillna(0)
-                if val.sum() > 0: ax.plot(e_x, val, marker='o', label=col); h_g = True
+            
+            # Recorrido por posición para evitar crasheos si hay nombres duplicados
+            for i in range(2, len(df_m_pdf.columns)):
+                col_name = df_m_pdf.columns[i]
+                val = pd.to_numeric(df_m_pdf.iloc[:, i], errors='coerce').fillna(0)
+                if val.sum() > 0: 
+                    ax.plot(e_x, val, marker='o', label=col_name)
+                    h_g = True
+                    
             ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
             if h_g: ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=5, frameon=False)
             plt.tight_layout()
             
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_g:
                 fig.savefig(tmp_g.name, dpi=300); pdf.image(tmp_g.name, x=10, w=190)
-            pdf.ln(5); pdf.tabla([str(c) for c in df_m_pdf.columns], [[str(x) for x in r] for _, r in df_m_pdf.iterrows()], [25, 15, 30, 30, 30, 30, 30])
+            pdf.ln(5)
+            
+            cols_list = list(df_m_pdf.columns)
+            pdf.tabla(cols_list, [[str(x) for x in r] for _, r in df_m_pdf.iterrows()], [25, 15] + [30]* (len(cols_list)-2))
             
             if fotos_m: pdf.galeria(fotos_m, "Evidencia de Monitoreo:")
-            promedio_ppm = df_m_pdf.iloc[:, 2:].apply(pd.to_numeric, errors='coerce').fillna(0).values.flatten().mean()
-
             if fotos_a: pdf.t_seccion("IV", "ANEXO FOTOGRÁFICO", force=True); pdf.galeria(fotos_a)
 
             pdf.t_seccion("V", "CONCLUSIONES TÉCNICAS", force=True)
@@ -685,6 +703,10 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 pdf.image(firma_path_guardada, x=75, w=60)
 
             # 2. CERTIFICADO ESTRUCTURAS
+            flat_vals = df_m_pdf.iloc[:, 2:].values.flatten()
+            promedio_ppm = pd.to_numeric(pd.Series(flat_vals), errors='coerce').dropna().mean()
+            promedio_ppm = 0 if pd.isna(promedio_ppm) else promedio_ppm
+
             cert = CertificadoPDF()
             cert.add_page()
             cert.set_font("Arial", "B", 10)
