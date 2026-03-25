@@ -67,6 +67,7 @@ if "app_mode" not in st.session_state: st.session_state.app_mode = "HOME"
 if "pdf_informe" not in st.session_state: st.session_state.pdf_informe = None
 if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
+if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 
 # Tablas Molinos (ESTÁTICAS PARA EVITAR BORRADOS FANTASMA)
 if "df_d_mol" not in st.session_state:
@@ -91,26 +92,47 @@ if "df_m_est" not in st.session_state:
     for i in range(3): d_me.append([(datetime.date.today() + datetime.timedelta(days=i)).strftime("%d-%m"), "10:00", 0, 0, 0, 0, 0])
     st.session_state.df_m_est = pd.DataFrame(d_me, columns=["Fecha", "Hora", "P1", "P2", "P3", "P4", "P5"])
 
-# --- BASES DE DATOS ---
-DATABASE_MOLINOS = {
-    "MOLINO CASABLANCA": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Alejandro Galaz N° 500, Casablanca", "volumen": 4850},
-    "MOLINO LA ESTAMPA": {"cliente": "MOLINO LA ESTAMPA S.A.", "rut": "90.828.000-8", "direccion": "Fermin Vivaceta 1053, Independencia", "volumen": 5500},
-    "MOLINO FERRER": {"cliente": "MOLINO FERRER HERMANOS S.A.", "rut": "76.000.000-3", "direccion": "Baquedano N° 647, San Bernardo", "volumen": 8127},
-    "MOLINO EXPOSICIÓN": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Exposición N° 1657, Estación Central", "volumen": 7502},
-    "MOLINO LINDEROS": {"cliente": "MOLINO LINDEROS S.A.", "rut": "76.000.000-5", "direccion": "Villaseca Nº 1195, Buin", "volumen": 4800},
-    "MOLINO MAIPÚ": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Avenida Pajarito N° 1046, Maipú", "volumen": 4059}
-}
-
+# --- BASES DE DATOS FIJAS DE RESPALDO ---
 DATABASE_ESTRUCTURAS_EXTRA = {
     "MOLINO PUENTE ALTO": {"cliente": "MOLINO PUENTE ALTO", "rut": "76.000.000-7", "direccion": "Calle Balmaceda 27, Puente Alto, Santiago RM."},
     "CV TRADING": {"cliente": "CV TRADING", "rut": "76.000.000-8", "direccion": "Camino Valdivia de Paine S/N, Buin"},
     "LDA SPA": {"cliente": "LDA SPA", "rut": "76.000.000-9", "direccion": "Ruta 5 sur Km 53, N°19200 Paine"},
     "TUCAPEL": {"cliente": "TUCAPEL", "rut": "76.000.000-0", "direccion": "Planta Lo Boza - Santiago"},
     "EMPRESAS CAROZZI S.A": {"cliente": "EMPRESAS CAROZZI S.A", "rut": "76.000.000-K", "direccion": "Longitudinal sur Km 21, San Bernardo."},
-    "AGROCOMMERCE": {"cliente": "AGROCOMMERCE", "rut": "76.000.000-1", "direccion": "Jose Miguel Infante 8745, Renca"},
-    "OTRO": {"cliente": "", "rut": "", "direccion": ""}
+    "AGROCOMMERCE": {"cliente": "AGROCOMMERCE", "rut": "76.000.000-1", "direccion": "Jose Miguel Infante 8745, Renca"}
 }
 
+# --- LECTOR DINÁMICO DE CSV (NUEVO v14.0) ---
+# Absorbe clientes automáticamente si detecta el archivo CSV que subiste.
+csv_path = None
+posibles_nombres = ["base de datos .xlsx - Hoja 1.csv", "base de datos .xlsx - Hoja1.csv", "clientes.csv"]
+for name in posibles_nombres:
+    if os.path.exists(name):
+        csv_path = name
+        break
+
+if csv_path:
+    try:
+        df_csv = pd.read_csv(csv_path, sep=None, engine='python', encoding='utf-8-sig')
+        cols = [str(c).lower() for c in df_csv.columns]
+        c_planta = df_csv.columns[next((i for i, c in enumerate(cols) if 'planta' in c or 'nombre' in c), 0)]
+        c_cliente = df_csv.columns[next((i for i, c in enumerate(cols) if 'raz' in c or 'cliente' in c or 'social' in c), 0)]
+        c_rut = df_csv.columns[next((i for i, c in enumerate(cols) if 'rut' in c), 0)]
+        c_dir = df_csv.columns[next((i for i, c in enumerate(cols) if 'dir' in c), 0)]
+        
+        for _, row in df_csv.iterrows():
+            n_planta = str(row[c_planta]).strip()
+            if n_planta and n_planta.lower() != 'nan':
+                DATABASE_ESTRUCTURAS_EXTRA[n_planta] = {
+                    "cliente": str(row[c_cliente]).strip() if c_cliente else n_planta,
+                    "rut": str(row[c_rut]).strip() if c_rut else "",
+                    "direccion": str(row[c_dir]).strip() if c_dir else "",
+                    "volumen": 0
+                }
+    except: pass
+
+DATABASE_ESTRUCTURAS_EXTRA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
+DATABASE_MOLINOS = DATABASE_ESTRUCTURAS_EXTRA # Unificamos para que todos tengan todo.
 LISTA_REPRESENTANTES = ["Nicholas Palma", "Vicente Madariaga", "Sebastián Carrillo", "Stefano Pernigotti", "Herbert Diaz", "Juan Callofa", "Maximiliano Caro"]
 
 # --- FUNCIONES UTILITARIAS ---
@@ -209,13 +231,41 @@ class InformePDF(FPDF):
             self.ln()
         self.ln(3)
 
+    def tabla_visita(self, label, lines):
+        """Genera filas multi-línea con diseño moderno para Visitas Técnicas"""
+        self.set_font("Arial", "B", 9)
+        y_start = self.get_y()
+        h = max(len(lines) * 5 + 4, 8)
+        if y_start + h > 270:
+            self.add_page()
+            y_start = self.get_y()
+
+        self.set_draw_color(200, 200, 200)
+        self.rect(10, y_start, 50, h)
+        self.rect(60, y_start, 140, h)
+
+        self.set_xy(10, y_start + (h/2 - 2))
+        self.cell(50, 4, label, align='C')
+
+        self.set_xy(60, y_start + 2)
+        self.set_font("Arial", "", 9)
+        for line in lines:
+            self.set_x(62)
+            self.cell(136, 5, line, ln=1)
+
+        self.set_y(y_start + h)
+
     def header(self):
         if os.path.exists('logo.png'):
             try: self.image('logo.png', 10, 8, 33)
             except: pass
         self.set_font("Arial", "B", 14)
         self.set_text_color(*COLOR_PRIMARIO)
-        self.cell(0, 8, "INFORME TÉCNICO DE FUMIGACIÓN", ln=1, align="R")
+        # Título dinámico
+        titulo = "INFORME TÉCNICO DE FUMIGACIÓN"
+        if getattr(self, 'is_visita', False):
+            titulo = "VISITA TÉCNICA PRE-FUMIGACIÓN"
+        self.cell(0, 8, titulo, ln=1, align="R")
         self.set_font("Arial", "I", 8)
         self.set_text_color(100, 100, 100)
         self.cell(0, 5, "RENTOKIL INITIAL CHILE SPA", ln=1, align="R")
@@ -305,7 +355,7 @@ class CertificadoPDF(FPDF):
         self.ln(4)
 
 # ==============================================================================
-# PANTALLA DE INICIO (HUB PRINCIPAL)
+# PANTALLA DE INICIO (HUB PRINCIPAL v14.0)
 # ==============================================================================
 if st.session_state.app_mode == "HOME":
     st.write("")
@@ -316,25 +366,170 @@ if st.session_state.app_mode == "HOME":
     
     st.markdown("---")
     
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
-        if st.button("🏭 INFORME DE MOLINOS\n(Técnico y Certificado)", use_container_width=True, type="primary"):
+        if st.button("🏭 MOLINOS\n(Técnico y Cert.)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "MOLINOS"; st.rerun()
     with c2:
-        if st.button("🏗️ INFORME DE ESTRUCTURAS\n(Técnico y Certificado)", use_container_width=True, type="primary"):
+        if st.button("🏗️ ESTRUCTURAS\n(Técnico y Cert.)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "ESTRUCTURAS"; st.rerun()
+    with c3:
+        if st.button("📋 VISITA TÉCNICA\n(Evaluación Previa)", use_container_width=True, type="primary"):
+            st.session_state.app_mode = "VISITA"; st.rerun()
             
     st.write("")
-    c3, c4 = st.columns(2)
-    with c3:
+    c4, c5 = st.columns(2)
+    with c4:
         if st.button("📸 INFORME DE DIÁLOGO\n(Fotos a Pantalla Completa)", use_container_width=True, type="secondary"):
             st.session_state.app_mode = "DIALOGO"; st.rerun()
-    with c4:
+    with c5:
         if st.button("📄 CONVERTIR PDF A WORD\n(Transforma archivos)", use_container_width=True, type="secondary"):
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA 1: MOLINOS
+# LÓGICA: VISITA TÉCNICA (NUEVO v14.0)
+# ==============================================================================
+elif st.session_state.app_mode == "VISITA":
+    with st.sidebar:
+        if os.path.exists("logo.png"): st.image("logo.png", width=120)
+        if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
+        st.info("Modo: Visita Técnica")
+
+    st.title("📋 Visita Técnica Pre-Fumigación")
+    
+    st.subheader("📸 I. Portada")
+    foto_portada = st.file_uploader("Sube aquí la Foto General de la Instalación", type=['png','jpg','jpeg','heic'], key="f_portada")
+
+    st.subheader("📝 II. Datos Generales")
+    op_v = st.selectbox("Seleccione Cliente", list(DATABASE_ESTRUCTURAS_EXTRA.keys()))
+    db_v = DATABASE_ESTRUCTURAS_EXTRA
+    
+    col_v1, col_v2 = st.columns(2)
+    with col_v1:
+        cliente_v = st.text_input("Razón Social", db_v[op_v].get("cliente", op_v))
+        dir_v = st.text_input("Dirección", db_v[op_v].get("direccion", ""))
+        tipo_fumi = st.text_input("Tipo de fumigación", "Lote bajo carpa")
+    with col_v2:
+        prod_tratado = st.text_input("Producto tratado", "Alimento para animales")
+        vol_v = st.number_input("Volumen estimado (m³)", value=50)
+        tiempo_v = st.text_input("Tiempo de exposición", "Al menos 120 días")
+
+    st.subheader("🛡️ III. Análisis de Seguridad")
+    col_s1, col_s2, col_s3 = st.columns(3)
+    with col_s1:
+        chimenea = st.radio("¿Cuenta con chimenea?", ["Sí", "No"], index=1)
+    with col_s2:
+        altura = st.radio("¿Requiere trabajo en altura?", ["Sí", "No"], index=1)
+        if altura == "Sí":
+            lineas_vida = st.radio("¿Cuenta con líneas de vida?", ["Sí", "No"])
+        else: lineas_vida = "No"
+    with col_s3:
+        oficinas = st.radio("¿Hay oficinas en la estructura?", ["Sí", "No"], index=1)
+        if oficinas == "Sí":
+            dist_oficinas = st.selectbox("Distancia de separación", ["10m", "20m", "30m", "40m", "+50m"])
+        else: dist_oficinas = "N/A"
+
+    st.subheader("⚠️ IV. Requerimientos al Cliente")
+    req_ordenar = st.checkbox("Ordenar el lote")
+    req_ubicacion = st.checkbox("Modificar ubicación")
+    req_film = st.checkbox("Retirar film a los pallets (para facilitar difusión)", value=True)
+    req_perimetro = st.checkbox("Generar perímetro (mín. 50cm para transitar y sellar a piso)", value=True)
+    req_notas = st.text_input("Otras notas adicionales para el cliente:")
+
+    st.subheader("⚙️ V. Análisis Operativo")
+    col_o1, col_o2 = st.columns(2)
+    with col_o1:
+        tipo_piso = st.selectbox("Tipo de piso", ["Cemento pulido", "Asfalto", "Tierra", "Baldosa", "Otro"])
+        sellado = st.selectbox("Sellado recomendado", ["Cinta PVC", "Culebras de arena", "Poliuretano expansivo", "Otro"])
+    with col_o2:
+        traer_jsystem = st.checkbox("Traer J-System", value=True)
+        traer_manga = st.checkbox("Traer manga de riego", value=True)
+        if chimenea == "Sí":
+            dist_chimenea = st.selectbox("Distancia a la chimenea", ["10m", "20m", "30m", "40m", "+50m"])
+        else: dist_chimenea = "N/A"
+
+    st.subheader("📎 VI. Anexo Fotográfico")
+    fotos_anexo_visita = st.file_uploader("Sube aquí fotos de detalles (planos, piso, techos, etc.)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
+
+    if st.button("🚀 GENERAR INFORME DE VISITA", use_container_width=True, type="primary"):
+        try:
+            pdf = InformePDF()
+            pdf.is_visita = True
+            pdf.add_page()
+            
+            # Portada (Foto General)
+            if foto_portada:
+                tmp_portada, w, h = procesar_imagen_full(foto_portada)
+                if tmp_portada:
+                    ratio = w / h
+                    max_w = 190
+                    calc_h = max_w / ratio
+                    if calc_h > 120: 
+                        calc_h = 120
+                        max_w = calc_h * ratio
+                    pdf_x = 10 + (190 - max_w) / 2
+                    pdf.image(tmp_portada, x=pdf_x, y=pdf.get_y(), w=max_w, h=calc_h)
+                    pdf.set_y(pdf.get_y() + calc_h + 10)
+                    os.remove(tmp_portada)
+
+            # Encabezado Tabla Moderno
+            pdf.set_font("Arial", "B", 10)
+            pdf.set_fill_color(*COLOR_CELESTE_CLARO)
+            pdf.set_text_color(255,255,255)
+            pdf.rect(10, pdf.get_y(), 190, 8, 'F')
+            pdf.cell(50, 8, "Elemento", align='C')
+            pdf.cell(140, 8, "Descripción Técnica", ln=1, align='C')
+            pdf.set_text_color(0,0,0)
+
+            # Generando viñetas
+            sec_lines = []
+            sec_lines.append(f"• Sitio {'SÍ' if chimenea=='Sí' else 'NO'} cuenta con chimenea.")
+            sec_lines.append(f"• Trabajo en altura: {altura}{' (Líneas de vida: '+lineas_vida+')' if altura=='Sí' else ''}.")
+            sec_lines.append(f"• Oficinas en estructura: {oficinas}{' (Separación: '+dist_oficinas+')' if oficinas=='Sí' else ''}.")
+
+            req_lines = []
+            if req_ordenar: req_lines.append("• Ordenar el lote.")
+            if req_ubicacion: req_lines.append("• Modificar ubicación.")
+            if req_film: req_lines.append("• Retirar film a los pallets.")
+            if req_perimetro: req_lines.append("• Generar perímetro en torno al lote.")
+            if req_notas: req_lines.append(f"• Notas: {req_notas}")
+            if not req_lines: req_lines.append("• Sin requerimientos adicionales.")
+
+            op_lines = []
+            op_lines.append(f"• Tipo de piso: {tipo_piso}.")
+            op_lines.append(f"• Sellado recomendado: {sellado}.")
+            if traer_jsystem: op_lines.append("• Se requiere traer J-System.")
+            if traer_manga: op_lines.append("• Se requiere traer Manga de riego.")
+            if chimenea == "Sí": op_lines.append(f"• Distancia a la chimenea: {dist_chimenea}.")
+
+            # Filas de la tabla
+            pdf.tabla_visita("Cliente", [cliente_v])
+            pdf.tabla_visita("Dirección", [dir_v])
+            pdf.tabla_visita("Tipo de fumigación", [tipo_fumi])
+            pdf.tabla_visita("Producto tratado", [prod_tratado])
+            pdf.tabla_visita("Volumen / Tiempo", [f"{vol_v} m3 / {tiempo_v}"])
+            pdf.tabla_visita("Análisis seguridad", sec_lines)
+            pdf.tabla_visita("Req. al cliente", req_lines)
+            pdf.tabla_visita("Análisis operativo", op_lines)
+
+            # Anexo
+            if fotos_anexo_visita:
+                pdf.add_page()
+                pdf.set_font("Arial", "B", 12)
+                pdf.set_text_color(*COLOR_PRIMARIO)
+                pdf.cell(0, 8, "ANEXO FOTOGRÁFICO", ln=1, align="C")
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(5)
+                pdf.galeria(fotos_anexo_visita)
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_v:
+                pdf.output(tmp_v.name)
+                with open(tmp_v.name, "rb") as fv: st.session_state.pdf_visita = fv.read()
+            st.rerun()
+        except Exception as e: st.error(f"Error al generar visita: {e}"); st.code(traceback.format_exc())
+
+# ==============================================================================
+# LÓGICA: MOLINOS
 # ==============================================================================
 elif st.session_state.app_mode == "MOLINOS":
     with st.sidebar:
@@ -395,7 +590,6 @@ elif st.session_state.app_mode == "MOLINOS":
     horas_exp = (datetime.datetime.combine(f_ter, h_ter) - datetime.datetime.combine(f_ini, h_ini)).total_seconds() / 3600
 
     st.subheader("IV. Distribución y Dosis")
-    # Tabla desconectada del guardado dinámico para evitar borrado fantasma
     df_d_mol_val = st.data_editor(st.session_state.df_d_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_d")
     fotos_dosis = st.file_uploader("Evidencia dosis (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_d_m")
     
@@ -403,7 +597,6 @@ elif st.session_state.app_mode == "MOLINOS":
     dosis_final = total_g / volumen_total if volumen_total > 0 else 0
 
     st.subheader("V. Mediciones")
-    # Tabla desconectada del guardado dinámico para evitar borrado fantasma
     df_m_mol_val = st.data_editor(st.session_state.df_m_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_m")
     fotos_meds = st.file_uploader("Evidencia de Monitoreo (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_m_m")
 
@@ -454,7 +647,6 @@ elif st.session_state.app_mode == "MOLINOS":
             e_x = df_m_mol_val["Fecha"].astype(str) + "\n" + df_m_mol_val["Hora"].astype(str)
             h_g = False
             
-            # Recorrido por posición para evitar crasheos si hay nombres duplicados
             for i in range(2, len(df_m_mol_val.columns)):
                 col_name = df_m_mol_val.columns[i]
                 val = pd.to_numeric(df_m_mol_val.iloc[:, i], errors='coerce').fillna(0)
@@ -494,7 +686,6 @@ elif st.session_state.app_mode == "MOLINOS":
                 pdf.image(firma_path_guardada, x=75, w=60)
 
             # 2. CERTIFICADO MOLINOS
-            # Cálculo seguro del promedio con matriz matemática pura
             flat_vals = df_m_mol_val.iloc[:, 2:].values.flatten()
             promedio_ppm = pd.to_numeric(pd.Series(flat_vals), errors='coerce').dropna().mean()
             promedio_ppm = 0 if pd.isna(promedio_ppm) else promedio_ppm
@@ -532,7 +723,7 @@ elif st.session_state.app_mode == "MOLINOS":
         except Exception as e: st.error(f"Error al generar documentos: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA 2: ESTRUCTURAS
+# LÓGICA: ESTRUCTURAS
 # ==============================================================================
 elif st.session_state.app_mode == "ESTRUCTURAS":
     with st.sidebar:
@@ -542,9 +733,8 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
     st.title("🏗️ Informe y Certificado Estructuras")
     st.subheader("I. Datos Generales")
-    LIST_CL = list(DATABASE_MOLINOS.keys()) + list(DATABASE_ESTRUCTURAS_EXTRA.keys())
-    op_e = st.selectbox("Cliente", LIST_CL)
-    db_ref = DATABASE_MOLINOS if op_e in DATABASE_MOLINOS else DATABASE_ESTRUCTURAS_EXTRA
+    op_e = st.selectbox("Cliente", list(DATABASE_ESTRUCTURAS_EXTRA.keys()))
+    db_ref = DATABASE_ESTRUCTURAS_EXTRA
     
     col_e1, col_e2, col_e3 = st.columns(3)
     with col_e1:
@@ -603,7 +793,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     for i in range(5):
         col_conf[f"P{i+1}"] = st.session_state.nom_p[i]
         
-    # Tabla desconectada para evitar reseteos visuales
     df_med_est_val = st.data_editor(st.session_state.df_m_est, column_config=col_conf, num_rows="dynamic", use_container_width=True, key="edi_est_m")
     fotos_m = st.file_uploader("Fotos mediciones", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
 
@@ -619,7 +808,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             df_m_pdf = df_med_est_val.copy()
             df_m_pdf.columns = ["Fecha", "Hora"] + st.session_state.nom_p
 
-            # 1. INFORME ESTRUCTURAS
             pdf = InformePDF()
             pdf.add_page()
             pdf.set_font("Arial", "", 11)
@@ -663,7 +851,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             e_x = df_m_pdf["Fecha"].astype(str) + "\n" + df_m_pdf["Hora"].astype(str)
             h_g = False
             
-            # Recorrido por posición para evitar crasheos si hay nombres duplicados
             for i in range(2, len(df_m_pdf.columns)):
                 col_name = df_m_pdf.columns[i]
                 val = pd.to_numeric(df_m_pdf.iloc[:, i], errors='coerce').fillna(0)
@@ -739,7 +926,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         except Exception as e: st.error(f"Error al generar documentos: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA 3: INFORME DE DIÁLOGO
+# LÓGICA: INFORME DE DIÁLOGO
 # ==============================================================================
 elif st.session_state.app_mode == "DIALOGO":
     with st.sidebar:
@@ -750,9 +937,8 @@ elif st.session_state.app_mode == "DIALOGO":
     st.title("📸 Informe de Diálogo (Pantalla Completa)")
     st.markdown("Este módulo genera un PDF oficial. La primera imagen acompaña la portada, las demás ocupan la hoja completa.")
     
-    LIST_CL = list(DATABASE_MOLINOS.keys()) + list(DATABASE_ESTRUCTURAS_EXTRA.keys())
-    op_d = st.selectbox("Seleccione Cliente", LIST_CL)
-    db_ref = DATABASE_MOLINOS if op_d in DATABASE_MOLINOS else DATABASE_ESTRUCTURAS_EXTRA
+    op_d = st.selectbox("Seleccione Cliente", list(DATABASE_ESTRUCTURAS_EXTRA.keys()))
+    db_ref = DATABASE_ESTRUCTURAS_EXTRA
     
     col_d1, col_d2 = st.columns(2)
     with col_d1:
@@ -774,7 +960,6 @@ elif st.session_state.app_mode == "DIALOGO":
                 pdf.cell(0, 8, "REGISTRO FOTOGRÁFICO DE DIÁLOGO", ln=1, align="C")
                 pdf.set_text_color(0, 0, 0); pdf.ln(5)
                 
-                # Cuadros Modernos
                 pdf.tabla_moderna(["CLIENTE / RAZÓN SOCIAL", "PLANTA", "FECHA"], [[str(cli_d), str(pla_d), format_fecha_es(fec_d)]], [80, 70, 40], color=COLOR_PRIMARIO)
                 pdf.tabla_moderna(["DIRECCIÓN"], [[str(dir_d)]], [190], color=COLOR_PRIMARIO)
                 
@@ -815,7 +1000,7 @@ elif st.session_state.app_mode == "DIALOGO":
             st.warning("Debes subir al menos una foto para generar el informe de diálogo.")
 
 # ==============================================================================
-# LÓGICA 4: PDF A WORD
+# LÓGICA: PDF A WORD
 # ==============================================================================
 elif st.session_state.app_mode == "PDF2WORD":
     with st.sidebar:
@@ -827,10 +1012,6 @@ elif st.session_state.app_mode == "PDF2WORD":
     
     if not PDF2DOCX_INSTALLED:
         st.error("⚠️ Falta una librería en el servidor.")
-        st.markdown("""
-        **Instrucciones (IMPORTANTE):**
-        Para que esto funcione en tu celular y en la nube, ve a tu cuenta de GitHub, abre el archivo `requirements.txt` y asegúrate de que tenga escrita la palabra **`pdf2docx`**. Si no está, agrégala y guarda los cambios.
-        """)
     else:
         st.markdown("Sube cualquier PDF tal cual lo tienes en el celular. El sistema internamente generará una copia idéntica en Word (`.docx`). **No necesitas cambiar ningún nombre, la aplicación lo hace por ti.**")
         uploaded_pdf = st.file_uploader("Selecciona tu documento", type=['pdf'])
@@ -874,3 +1055,7 @@ if st.session_state.app_mode in ["MOLINOS", "ESTRUCTURAS"]:
 if st.session_state.app_mode == "DIALOGO" and st.session_state.pdf_dialogo is not None:
     st.success("✅ Informe de Diálogo Generado Exitosamente")
     st.download_button("📸 DESCARGAR INFORME DE DIÁLOGO", data=st.session_state.pdf_dialogo, file_name="Dialogo_Rentokil.pdf", mime="application/pdf", use_container_width=True)
+
+if st.session_state.app_mode == "VISITA" and st.session_state.pdf_visita is not None:
+    st.success("✅ Informe de Visita Técnica Generado Exitosamente")
+    st.download_button("📋 DESCARGAR VISITA TÉCNICA", data=st.session_state.pdf_visita, file_name="Visita_Tecnica_Rentokil.pdf", mime="application/pdf", use_container_width=True)
