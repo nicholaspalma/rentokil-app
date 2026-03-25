@@ -387,7 +387,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: VISITA TÉCNICA (NUEVO v14.0)
+# LÓGICA: VISITA TÉCNICA (NUEVO v14.1)
 # ==============================================================================
 elif st.session_state.app_mode == "VISITA":
     with st.sidebar:
@@ -481,26 +481,26 @@ elif st.session_state.app_mode == "VISITA":
             pdf.cell(140, 8, "Descripción Técnica", ln=1, align='C')
             pdf.set_text_color(0,0,0)
 
-            # Generando viñetas
+            # Generando viñetas (Con Guiones en vez de viñetas unicode para evitar el error de codificación)
             sec_lines = []
-            sec_lines.append(f"• Sitio {'SÍ' if chimenea=='Sí' else 'NO'} cuenta con chimenea.")
-            sec_lines.append(f"• Trabajo en altura: {altura}{' (Líneas de vida: '+lineas_vida+')' if altura=='Sí' else ''}.")
-            sec_lines.append(f"• Oficinas en estructura: {oficinas}{' (Separación: '+dist_oficinas+')' if oficinas=='Sí' else ''}.")
+            sec_lines.append(f"- Sitio {'SÍ' if chimenea=='Sí' else 'NO'} cuenta con chimenea.")
+            sec_lines.append(f"- Trabajo en altura: {altura}{' (Líneas de vida: '+lineas_vida+')' if altura=='Sí' else ''}.")
+            sec_lines.append(f"- Oficinas en estructura: {oficinas}{' (Separación: '+dist_oficinas+')' if oficinas=='Sí' else ''}.")
 
             req_lines = []
-            if req_ordenar: req_lines.append("• Ordenar el lote.")
-            if req_ubicacion: req_lines.append("• Modificar ubicación.")
-            if req_film: req_lines.append("• Retirar film a los pallets.")
-            if req_perimetro: req_lines.append("• Generar perímetro en torno al lote.")
-            if req_notas: req_lines.append(f"• Notas: {req_notas}")
-            if not req_lines: req_lines.append("• Sin requerimientos adicionales.")
+            if req_ordenar: req_lines.append("- Ordenar el lote.")
+            if req_ubicacion: req_lines.append("- Modificar ubicación.")
+            if req_film: req_lines.append("- Retirar film a los pallets.")
+            if req_perimetro: req_lines.append("- Generar perímetro en torno al lote.")
+            if req_notas: req_lines.append(f"- Notas: {req_notas}")
+            if not req_lines: req_lines.append("- Sin requerimientos adicionales.")
 
             op_lines = []
-            op_lines.append(f"• Tipo de piso: {tipo_piso}.")
-            op_lines.append(f"• Sellado recomendado: {sellado}.")
-            if traer_jsystem: op_lines.append("• Se requiere traer J-System.")
-            if traer_manga: op_lines.append("• Se requiere traer Manga de riego.")
-            if chimenea == "Sí": op_lines.append(f"• Distancia a la chimenea: {dist_chimenea}.")
+            op_lines.append(f"- Tipo de piso: {tipo_piso}.")
+            op_lines.append(f"- Sellado recomendado: {sellado}.")
+            if traer_jsystem: op_lines.append("- Se requiere traer J-System.")
+            if traer_manga: op_lines.append("- Se requiere traer Manga de riego.")
+            if chimenea == "Sí": op_lines.append(f"- Distancia a la chimenea: {dist_chimenea}.")
 
             # Filas de la tabla
             pdf.tabla_visita("Cliente", [cliente_v])
@@ -733,8 +733,9 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
     st.title("🏗️ Informe y Certificado Estructuras")
     st.subheader("I. Datos Generales")
-    op_e = st.selectbox("Cliente", list(DATABASE_ESTRUCTURAS_EXTRA.keys()))
-    db_ref = DATABASE_ESTRUCTURAS_EXTRA
+    LIST_CL = list(DATABASE_MOLINOS.keys()) + list(DATABASE_ESTRUCTURAS_EXTRA.keys())
+    op_e = st.selectbox("Cliente", LIST_CL)
+    db_ref = DATABASE_MOLINOS if op_e in DATABASE_MOLINOS else DATABASE_ESTRUCTURAS_EXTRA
     
     col_e1, col_e2, col_e3 = st.columns(3)
     with col_e1:
