@@ -102,8 +102,7 @@ DATABASE_ESTRUCTURAS_EXTRA = {
     "AGROCOMMERCE": {"cliente": "AGROCOMMERCE", "rut": "76.000.000-1", "direccion": "Jose Miguel Infante 8745, Renca"}
 }
 
-# --- LECTOR DINÁMICO DE CSV (NUEVO v14.0) ---
-# Absorbe clientes automáticamente si detecta el archivo CSV que subiste.
+# --- LECTOR DINÁMICO DE CSV ---
 csv_path = None
 posibles_nombres = ["base de datos .xlsx - Hoja 1.csv", "base de datos .xlsx - Hoja1.csv", "clientes.csv"]
 for name in posibles_nombres:
@@ -132,7 +131,7 @@ if csv_path:
     except: pass
 
 DATABASE_ESTRUCTURAS_EXTRA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
-DATABASE_MOLINOS = DATABASE_ESTRUCTURAS_EXTRA # Unificamos para que todos tengan todo.
+DATABASE_MOLINOS = DATABASE_ESTRUCTURAS_EXTRA 
 LISTA_REPRESENTANTES = ["Nicholas Palma", "Vicente Madariaga", "Sebastián Carrillo", "Stefano Pernigotti", "Herbert Diaz", "Juan Callofa", "Maximiliano Caro"]
 
 # --- FUNCIONES UTILITARIAS ---
@@ -355,7 +354,7 @@ class CertificadoPDF(FPDF):
         self.ln(4)
 
 # ==============================================================================
-# PANTALLA DE INICIO (HUB PRINCIPAL v14.0)
+# PANTALLA DE INICIO (HUB PRINCIPAL)
 # ==============================================================================
 if st.session_state.app_mode == "HOME":
     st.write("")
@@ -387,7 +386,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: VISITA TÉCNICA (NUEVO v14.1)
+# LÓGICA: VISITA TÉCNICA (NUEVO v14.2 - Ajuste de salto de página)
 # ==============================================================================
 elif st.session_state.app_mode == "VISITA":
     with st.sidebar:
@@ -448,7 +447,7 @@ elif st.session_state.app_mode == "VISITA":
             dist_chimenea = st.selectbox("Distancia a la chimenea", ["10m", "20m", "30m", "40m", "+50m"])
         else: dist_chimenea = "N/A"
 
-    st.subheader("📎 VI. Anexo Fotográfico")
+    st.subheader("📎 VI. Registro Fotográfico")
     fotos_anexo_visita = st.file_uploader("Sube aquí fotos de detalles (planos, piso, techos, etc.)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
 
     if st.button("🚀 GENERAR INFORME DE VISITA", use_container_width=True, type="primary"):
@@ -481,7 +480,7 @@ elif st.session_state.app_mode == "VISITA":
             pdf.cell(140, 8, "Descripción Técnica", ln=1, align='C')
             pdf.set_text_color(0,0,0)
 
-            # Generando viñetas (Con Guiones en vez de viñetas unicode para evitar el error de codificación)
+            # Viñetas con guiones
             sec_lines = []
             sec_lines.append(f"- Sitio {'SÍ' if chimenea=='Sí' else 'NO'} cuenta con chimenea.")
             sec_lines.append(f"- Trabajo en altura: {altura}{' (Líneas de vida: '+lineas_vida+')' if altura=='Sí' else ''}.")
@@ -512,14 +511,19 @@ elif st.session_state.app_mode == "VISITA":
             pdf.tabla_visita("Req. al cliente", req_lines)
             pdf.tabla_visita("Análisis operativo", op_lines)
 
-            # Anexo
+            # Registro Fotográfico (Continuo, sin salto obligatorio)
             if fotos_anexo_visita:
-                pdf.add_page()
-                pdf.set_font("Arial", "B", 12)
-                pdf.set_text_color(*COLOR_PRIMARIO)
-                pdf.cell(0, 8, "ANEXO FOTOGRÁFICO", ln=1, align="C")
+                pdf.ln(8)
+                # Solo salta de página si de verdad no cabe el título y una foto
+                if pdf.get_y() > 230:
+                    pdf.add_page()
+                
+                pdf.set_font("Arial", "B", 10)
+                pdf.set_fill_color(*COLOR_PRIMARIO)
+                pdf.set_text_color(255, 255, 255)
+                pdf.cell(0, 7, "  REGISTRO FOTOGRÁFICO", ln=1, fill=True)
                 pdf.set_text_color(0, 0, 0)
-                pdf.ln(5)
+                pdf.ln(2)
                 pdf.galeria(fotos_anexo_visita)
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_v:
@@ -876,7 +880,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             pdf.t_seccion("V", "CONCLUSIONES TÉCNICAS", force=True)
             t_efic = f"asegurando el control biológico de {plaga_e} en todos sus estadios de desarrollo."
             if tipo_trat == "Preventivo":
-                t_efic = "logrando establecer una barrera sanitaria efectiva que elimina reservorios biológicos latentes y mitiga riesgos de contaminación cruzada, garantizando así la integridad higiénica de las instalaciones."
+                t_efic = "logrando establecer una barrera sanitaria efectiva que elimina reservorios biológicos latentes y mitiga risks de contaminación cruzada, garantizando así la integridad higiénica de las instalaciones."
 
             c_text = (
                 "EVALUACIÓN DE EFICACIA:\n"
