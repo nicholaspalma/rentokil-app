@@ -83,14 +83,15 @@ if "df_m_mol" not in st.session_state:
         for h in ["19:00", "00:00", "07:00", "13:00"]: d_m.append([f_s, h, 300, 310, 320, 305, 300, 290])
     st.session_state.df_m_mol = pd.DataFrame(d_m, columns=["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "Piso 5"])
 
-# Tablas Estructuras (COLUMNAS P1, P2... PARA EVITAR BORRADOS FANTASMA)
+# Tablas Estructuras (AMPLIADO A 10 PUNTOS)
 if "df_d_est" not in st.session_state:
     st.session_state.df_d_est = pd.DataFrame([{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}])
-if "nom_p" not in st.session_state: st.session_state.nom_p = ["Punto 1", "Punto 2", "Punto 3", "Punto 4", "Punto 5"]
+if "nom_p" not in st.session_state: st.session_state.nom_p = [f"Punto {i+1}" for i in range(10)]
 if "df_m_est" not in st.session_state:
     d_me = []
-    for i in range(3): d_me.append([(datetime.date.today() + datetime.timedelta(days=i)).strftime("%d-%m"), "10:00", 0, 0, 0, 0, 0])
-    st.session_state.df_m_est = pd.DataFrame(d_me, columns=["Fecha", "Hora", "P1", "P2", "P3", "P4", "P5"])
+    for i in range(3): d_me.append([(datetime.date.today() + datetime.timedelta(days=i)).strftime("%d-%m"), "10:00"] + [0]*10)
+    cols_est = ["Fecha", "Hora"] + [f"P{i+1}" for i in range(10)]
+    st.session_state.df_m_est = pd.DataFrame(d_me, columns=cols_est)
 
 # --- BASES DE DATOS FIJAS DE RESPALDO ---
 DATABASE_ESTRUCTURAS_EXTRA = {
@@ -132,7 +133,9 @@ if csv_path:
 
 DATABASE_ESTRUCTURAS_EXTRA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
 DATABASE_MOLINOS = DATABASE_ESTRUCTURAS_EXTRA 
-LISTA_REPRESENTANTES = ["Nicholas Palma", "Vicente Madariaga", "Sebastián Carrillo", "Stefano Pernigotti", "Herbert Diaz", "Juan Callofa", "Maximiliano Caro"]
+
+# --- REPRESENTANTES ACTUALIZADOS ---
+LISTA_REPRESENTANTES = ["Nicholas Palma", "Vicente Madariaga", "Sebastián Carrillo", "Stefano Pernigotti", "Herbert Diaz", "Juan Callofa", "Maximiliano Caro", "Pavel Sotomayor", "OTRO"]
 
 # --- FUNCIONES UTILITARIAS ---
 def format_fecha_es(fecha):
@@ -231,7 +234,6 @@ class InformePDF(FPDF):
         self.ln(3)
 
     def tabla_visita(self, label, lines):
-        """Genera filas multi-línea con diseño moderno para Visitas Técnicas"""
         self.set_font("Arial", "B", 9)
         y_start = self.get_y()
         h = max(len(lines) * 5 + 4, 8)
@@ -260,7 +262,6 @@ class InformePDF(FPDF):
             except: pass
         self.set_font("Arial", "B", 14)
         self.set_text_color(*COLOR_PRIMARIO)
-        # Título dinámico
         titulo = "INFORME TÉCNICO DE FUMIGACIÓN"
         if getattr(self, 'is_visita', False):
             titulo = "VISITA TÉCNICA PRE-FUMIGACIÓN"
@@ -386,7 +387,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: VISITA TÉCNICA (NUEVO v14.2 - Ajuste de salto de página)
+# LÓGICA: VISITA TÉCNICA 
 # ==============================================================================
 elif st.session_state.app_mode == "VISITA":
     with st.sidebar:
@@ -456,7 +457,6 @@ elif st.session_state.app_mode == "VISITA":
             pdf.is_visita = True
             pdf.add_page()
             
-            # Portada (Foto General)
             if foto_portada:
                 tmp_portada, w, h = procesar_imagen_full(foto_portada)
                 if tmp_portada:
@@ -471,7 +471,6 @@ elif st.session_state.app_mode == "VISITA":
                     pdf.set_y(pdf.get_y() + calc_h + 10)
                     os.remove(tmp_portada)
 
-            # Encabezado Tabla Moderno
             pdf.set_font("Arial", "B", 10)
             pdf.set_fill_color(*COLOR_CELESTE_CLARO)
             pdf.set_text_color(255,255,255)
@@ -480,7 +479,6 @@ elif st.session_state.app_mode == "VISITA":
             pdf.cell(140, 8, "Descripción Técnica", ln=1, align='C')
             pdf.set_text_color(0,0,0)
 
-            # Viñetas con guiones
             sec_lines = []
             sec_lines.append(f"- Sitio {'SÍ' if chimenea=='Sí' else 'NO'} cuenta con chimenea.")
             sec_lines.append(f"- Trabajo en altura: {altura}{' (Líneas de vida: '+lineas_vida+')' if altura=='Sí' else ''}.")
@@ -501,7 +499,6 @@ elif st.session_state.app_mode == "VISITA":
             if traer_manga: op_lines.append("- Se requiere traer Manga de riego.")
             if chimenea == "Sí": op_lines.append(f"- Distancia a la chimenea: {dist_chimenea}.")
 
-            # Filas de la tabla
             pdf.tabla_visita("Cliente", [cliente_v])
             pdf.tabla_visita("Dirección", [dir_v])
             pdf.tabla_visita("Tipo de fumigación", [tipo_fumi])
@@ -511,10 +508,8 @@ elif st.session_state.app_mode == "VISITA":
             pdf.tabla_visita("Req. al cliente", req_lines)
             pdf.tabla_visita("Análisis operativo", op_lines)
 
-            # Registro Fotográfico (Continuo, sin salto obligatorio)
             if fotos_anexo_visita:
                 pdf.ln(8)
-                # Solo salta de página si de verdad no cabe el título y una foto
                 if pdf.get_y() > 230:
                     pdf.add_page()
                 
@@ -574,7 +569,14 @@ elif st.session_state.app_mode == "MOLINOS":
     col_l1, col_l2 = st.columns(2)
     with col_l1:
         enc_l_mol = st.text_input("Encargado Limpieza (Cliente)", "Jefe de Planta")
-        rep_r = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES)
+        
+        # NUEVO SISTEMA DE REPRESENTANTES (MOLINOS)
+        rep_m_sel = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES, key="rep_sel_m")
+        if rep_m_sel == "OTRO":
+            rep_r = st.text_input("Ingrese nombre del Representante manualmente:", key="rep_man_m")
+        else:
+            rep_r = rep_m_sel
+            
     with col_l2:
         fecha_rev_mol = st.date_input("Fecha Revisión", datetime.date.today(), key="f_rev_m")
         hora_rev_mol = st.time_input("Hora Revisión", datetime.time(10, 0), key="h_rev_m")
@@ -613,7 +615,6 @@ elif st.session_state.app_mode == "MOLINOS":
         try:
             firma_path_guardada = procesar_firma(firma_file) if firma_file else ('firma.png' if os.path.exists('firma.png') else None)
             
-            # 1. INFORME MOLINOS
             pdf = InformePDF()
             pdf.add_page()
             pdf.set_font("Arial", "", 11)
@@ -689,7 +690,7 @@ elif st.session_state.app_mode == "MOLINOS":
                 if pdf.get_y() > 240: pdf.add_page()
                 pdf.image(firma_path_guardada, x=75, w=60)
 
-            # 2. CERTIFICADO MOLINOS
+            # CERTIFICADO MOLINOS
             flat_vals = df_m_mol_val.iloc[:, 2:].values.flatten()
             promedio_ppm = pd.to_numeric(pd.Series(flat_vals), errors='coerce').dropna().mean()
             promedio_ppm = 0 if pd.isna(promedio_ppm) else promedio_ppm
@@ -763,7 +764,14 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     col_l1, col_l2 = st.columns(2)
     with col_l1:
         enc_l = st.text_input("Encargado Limpieza", "Jefe de Turno")
-        rep_r = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES)
+        
+        # NUEVO SISTEMA DE REPRESENTANTES (ESTRUCTURAS)
+        rep_e_sel = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES, key="rep_sel_e")
+        if rep_e_sel == "OTRO":
+            rep_r = st.text_input("Ingrese nombre del Representante manualmente:", key="rep_man_e")
+        else:
+            rep_r = rep_e_sel
+            
     with col_l2:
         fecha_rev = st.date_input("Fecha Revisión", datetime.date.today())
         hora_rev = st.time_input("Hora Revisión", datetime.time(10, 0))
@@ -787,15 +795,18 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         h_ter_e = st.time_input("Hora Término", datetime.time(10, 0))
     h_exp_e = (datetime.datetime.combine(f_ter_e, h_ter_e) - datetime.datetime.combine(f_ini_e, h_ini_e)).total_seconds() / 3600
 
-    c_n = st.columns(5)
-    n_cols_temp = ["Fecha", "Hora"]
-    for i in range(5): 
-        nom = c_n[i].text_input(f"Punto {i+1}", st.session_state.nom_p[i])
+    # 10 PUNTOS DE MEDICIÓN
+    st.markdown("**Puntos de Medición (Puede usar hasta 10)**")
+    c_n_r1 = st.columns(5)
+    c_n_r2 = st.columns(5)
+    c_all = c_n_r1 + c_n_r2
+
+    for i in range(10):
+        nom = c_all[i].text_input(f"Punto {i+1}", st.session_state.nom_p[i], key=f"pe_{i}")
         st.session_state.nom_p[i] = nom
-        n_cols_temp.append(nom)
     
     col_conf = {"Fecha": "Fecha", "Hora": "Hora"}
-    for i in range(5):
+    for i in range(10):
         col_conf[f"P{i+1}"] = st.session_state.nom_p[i]
         
     df_med_est_val = st.data_editor(st.session_state.df_m_est, column_config=col_conf, num_rows="dynamic", use_container_width=True, key="edi_est_m")
@@ -812,6 +823,16 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             
             df_m_pdf = df_med_est_val.copy()
             df_m_pdf.columns = ["Fecha", "Hora"] + st.session_state.nom_p
+
+            # FILTRO DINÁMICO: Solo conservar los puntos de medición que se usaron
+            cols_to_keep = ["Fecha", "Hora"]
+            for i in range(2, len(df_m_pdf.columns)):
+                col_name = df_m_pdf.columns[i]
+                val = pd.to_numeric(df_m_pdf.iloc[:, i], errors='coerce').fillna(0)
+                if val.sum() > 0 or col_name.strip().lower() != f"punto {i-1}".lower():
+                    cols_to_keep.append(col_name)
+
+            df_m_pdf_filtered = df_m_pdf[cols_to_keep]
 
             pdf = InformePDF()
             pdf.add_page()
@@ -853,26 +874,28 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             pdf.t_seccion("III", "TIEMPOS Y MEDICIONES", force=True)
             pdf.tabla(["Evento", "Fecha", "Hora", "Total Horas"], [["Inicio", str(f_ini_e), str(h_ini_e), f"{h_exp_e:.1f}"], ["Término", str(f_ter_e), str(h_ter_e), "---"]], [45, 45, 45, 55])
             pdf.ln(5); fig, ax = plt.subplots(figsize=(10, 5))
-            e_x = df_m_pdf["Fecha"].astype(str) + "\n" + df_m_pdf["Hora"].astype(str)
+            e_x = df_m_pdf_filtered["Fecha"].astype(str) + "\n" + df_m_pdf_filtered["Hora"].astype(str)
             h_g = False
             
-            for i in range(2, len(df_m_pdf.columns)):
-                col_name = df_m_pdf.columns[i]
-                val = pd.to_numeric(df_m_pdf.iloc[:, i], errors='coerce').fillna(0)
+            for i in range(2, len(df_m_pdf_filtered.columns)):
+                col_name = df_m_pdf_filtered.columns[i]
+                val = pd.to_numeric(df_m_pdf_filtered.iloc[:, i], errors='coerce').fillna(0)
                 if val.sum() > 0: 
                     ax.plot(e_x, val, marker='o', label=col_name)
                     h_g = True
                     
             ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
-            if h_g: ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=5, frameon=False)
+            if h_g: ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.2), ncol=5, frameon=False)
             plt.tight_layout()
             
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_g:
                 fig.savefig(tmp_g.name, dpi=300); pdf.image(tmp_g.name, x=10, w=190)
             pdf.ln(5)
             
-            cols_list = list(df_m_pdf.columns)
-            pdf.tabla(cols_list, [[str(x) for x in r] for _, r in df_m_pdf.iterrows()], [25, 15] + [30]* (len(cols_list)-2))
+            cols_list = list(df_m_pdf_filtered.columns)
+            num_points = len(cols_list) - 2
+            w_points = 155 / num_points if num_points > 0 else 0
+            pdf.tabla(cols_list, [[str(x) for x in r] for _, r in df_m_pdf_filtered.iterrows()], [20, 15] + [w_points]*num_points)
             
             if fotos_m: pdf.galeria(fotos_m, "Evidencia de Monitoreo:")
             if fotos_a: pdf.t_seccion("IV", "ANEXO FOTOGRÁFICO", force=True); pdf.galeria(fotos_a)
@@ -880,7 +903,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             pdf.t_seccion("V", "CONCLUSIONES TÉCNICAS", force=True)
             t_efic = f"asegurando el control biológico de {plaga_e} en todos sus estadios de desarrollo."
             if tipo_trat == "Preventivo":
-                t_efic = "logrando establecer una barrera sanitaria efectiva que elimina reservorios biológicos latentes y mitiga risks de contaminación cruzada, garantizando así la integridad higiénica de las instalaciones."
+                t_efic = "logrando establecer una barrera sanitaria efectiva que elimina reservorios biológicos latentes y mitiga riesgos de contaminación cruzada, garantizando así la integridad higiénica de las instalaciones."
 
             c_text = (
                 "EVALUACIÓN DE EFICACIA:\n"
@@ -895,7 +918,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 pdf.image(firma_path_guardada, x=75, w=60)
 
             # 2. CERTIFICADO ESTRUCTURAS
-            flat_vals = df_m_pdf.iloc[:, 2:].values.flatten()
+            flat_vals = df_m_pdf_filtered.iloc[:, 2:].values.flatten()
             promedio_ppm = pd.to_numeric(pd.Series(flat_vals), errors='coerce').dropna().mean()
             promedio_ppm = 0 if pd.isna(promedio_ppm) else promedio_ppm
 
