@@ -378,7 +378,8 @@ if st.session_state.app_mode == "HOME":
     col_logo1, col_logo2, col_logo3 = st.columns([1,2,1])
     with col_logo2:
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
-        st.markdown("<h2 style='text-align: center; color: #E30613;'>Generador de Informes y Herramientas</h2>", unsafe_allow_html=True)
+        # Cambio 1: Título actualizado
+        st.markdown("<h2 style='text-align: center; color: #E30613;'>Generador de Informes y Herramientas para RT</h2>", unsafe_allow_html=True)
     
     st.markdown("---")
     
@@ -393,7 +394,8 @@ if st.session_state.app_mode == "HOME":
         if st.button("📋 VISITA TÉCNICA\n(Evaluación Previa)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "VISITA"; st.rerun()
     with c_new:
-        if st.button("📢 NOTIFICACIÓN\n(Aviso al Cliente)", use_container_width=True, type="primary"):
+        # Cambio 2: Botón actualizado
+        if st.button("📢 NOTIFICACIÓN\n(Aviso al Seremi)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "AVISO"; st.rerun()
             
     st.write("")
@@ -406,7 +408,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN (V16.2 - CAMPOS COMPLETOS)
+# LÓGICA: AVISO DE FUMIGACIÓN 
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     with st.sidebar:
@@ -414,7 +416,7 @@ elif st.session_state.app_mode == "AVISO":
         if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
         st.info("Modo: Notificación de Fumigación")
 
-    st.title("📢 Generador de Aviso de Fumigación")
+    st.title("📢 Generador de Aviso al Seremi")
     
     if not DOCXTPL_INSTALLED:
         st.error("⚠️ Para usar este módulo, debes agregar la palabra `docxtpl` a tu archivo `requirements.txt` en GitHub y esperar 2 minutos a que se instale.")
@@ -487,7 +489,7 @@ elif st.session_state.app_mode == "AVISO":
         with col_img2:
             firma_aviso = st.file_uploader("Firma del Responsable Rentokil", type=["png", "jpg", "jpeg", "heic"])
 
-        if st.button("🚀 GENERAR DOCUMENTO NOTIFICACIÓN", use_container_width=True, type="primary"):
+        if st.button("🚀 GENERAR AVISO AL SEREMI", use_container_width=True, type="primary"):
             if not os.path.exists("plantilla_aviso.docx"):
                 st.error("❌ No se encontró el archivo `plantilla_aviso.docx`. Por favor, súbelo a GitHub en la misma carpeta.")
             else:
@@ -497,7 +499,6 @@ elif st.session_state.app_mode == "AVISO":
                     check_on = "☒"
                     check_off = "☐"
                     
-                    # DICCIONARIO DE ETIQUETAS -> VARIABLES
                     context = {
                         'fecha_emision': format_fecha_es(fecha_emision_a),
                         'hora_emision': datetime.datetime.now().strftime("%H:%M"),
@@ -537,12 +538,14 @@ elif st.session_state.app_mode == "AVISO":
                     if mapa_file:
                         mapa_path, _, _ = procesar_imagen_full(mapa_file)
                         if mapa_path:
-                            context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(150))
+                            # Cambio 3: Reduje a 135mm para que no obligue el salto de página
+                            context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(135))
                             
                     if firma_aviso:
                         firma_path = procesar_firma(firma_aviso)
                         if firma_path:
-                            context['firma_img'] = InlineImage(doc, firma_path, width=Mm(50))
+                            # Cambio 4: Reduje a 40mm para ahorrar espacio vertical
+                            context['firma_img'] = InlineImage(doc, firma_path, width=Mm(40))
 
                     doc.render(context)
                     
@@ -633,7 +636,7 @@ elif st.session_state.app_mode == "VISITA":
         else: dist_chimenea = "N/A"
 
     st.subheader("📎 VI. Registro Fotográfico")
-    fotos_anexo_visita = st.file_uploader("Sube aquí fotos de detalles (planos, piso, techos, etc.)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
+    fotos_anexo_visita = file_uploader_vis = st.file_uploader("Sube aquí fotos de detalles (planos, piso, techos, etc.)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
 
     if st.button("🚀 GENERAR INFORME DE VISITA", use_container_width=True, type="primary"):
         try:
