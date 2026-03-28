@@ -378,7 +378,6 @@ if st.session_state.app_mode == "HOME":
     col_logo1, col_logo2, col_logo3 = st.columns([1,2,1])
     with col_logo2:
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
-        # Cambio 1: Título actualizado
         st.markdown("<h2 style='text-align: center; color: #E30613;'>Generador de Informes y Herramientas para RT</h2>", unsafe_allow_html=True)
     
     st.markdown("---")
@@ -394,7 +393,6 @@ if st.session_state.app_mode == "HOME":
         if st.button("📋 VISITA TÉCNICA\n(Evaluación Previa)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "VISITA"; st.rerun()
     with c_new:
-        # Cambio 2: Botón actualizado
         if st.button("📢 NOTIFICACIÓN\n(Aviso al Seremi)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "AVISO"; st.rerun()
             
@@ -408,7 +406,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN 
+# LÓGICA: AVISO DE FUMIGACIÓN (V16.5 - CON PLAGA DINÁMICA Y QUÍMICOS NUEVOS)
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     with st.sidebar:
@@ -438,7 +436,8 @@ elif st.session_state.app_mode == "AVISO":
             tel_cliente_a = st.text_input("Teléfono Cliente", "")
         with col_a3:
             fecha_emision_a = st.date_input("Fecha de emisión del documento", datetime.date.today())
-            st.info("La *Hora de Emisión* se tomará automáticamente del sistema al generar el archivo.")
+            fecha_visita_a = st.date_input("Fecha de Visita Previa", datetime.date.today() - datetime.timedelta(days=1))
+            st.info("La *Hora de Emisión* se tomará automáticamente del sistema.")
 
         st.subheader("👨‍💼 II. Datos del Representante (Rentokil)")
         col_r1, col_r2, col_r3 = st.columns(3)
@@ -468,15 +467,22 @@ elif st.session_state.app_mode == "AVISO":
             estructura_lote_a = st.text_input("Estructura / Lote a Tratar", "Lote 1")
             areas_a = st.text_input("Área General", "Bodega Principal")
             
-        col_f5, col_f6 = st.columns(2)
+        col_f5, col_f6, col_f7 = st.columns(3)
         with col_f5:
-            producto_a = st.text_input("Mercadería / Producto a Tratar (Cultivo)", "Nueces de exportación")
+            producto_a = st.text_input("Mercadería / Producto a Tratar", "Nueces de exportación")
         with col_f6:
-            quimico_a = st.selectbox("Químico (Fumigante)", ["Fosfina (Fosfuro de Aluminio)", "Fosfuro de Magnesio", "Bromuro de Metilo"])
+            quimico_a = st.selectbox("Químico (Fumigante)", ["Fosfina (Fosfuro de Aluminio)", "Fosfuro de Magnesio", "Ambos (Fosfuro de Aluminio y Magnesio)"])
+        with col_f7:
+            # LÓGICA CONDICIONAL DE LA PLAGA
+            if tipo_fum_a == "Curativa":
+                plaga_a = st.text_input("Plaga Detectada", "Tribolium confusum")
+            else:
+                plaga_a = ""
+                st.text_input("Plaga Detectada", "N/A (Tratamiento Preventivo)", disabled=True)
 
         st.subheader("🛠️ IV. Modalidad de Tratamiento")
         modalidad_a = st.selectbox("Seleccione la modalidad para marcar en el documento", 
-                                   ["Lote bajo carpa (cámara de fumigación)", "Silos", "Estructura completa", "Contenedores", "Otros"])
+                                   ["Lote bajo carpa (cámara de fumigación)", "Silos", "Estructuras", "Contenedores", "Otros"])
         
         texto_otro_a = "____________________"
         if modalidad_a == "Otros":
@@ -501,6 +507,7 @@ elif st.session_state.app_mode == "AVISO":
                     
                     context = {
                         'fecha_emision': format_fecha_es(fecha_emision_a),
+                        'fecha_visita': format_fecha_es(fecha_visita_a),
                         'hora_emision': datetime.datetime.now().strftime("%H:%M"),
                         'cliente': cliente_a,
                         'rut_cliente': rut_cliente_a,
@@ -523,10 +530,11 @@ elif st.session_state.app_mode == "AVISO":
                         'areas': areas_a,
                         'producto': producto_a,
                         'quimico': quimico_a,
+                        'plaga': plaga_a,
                         
                         'check_carpa': check_on if modalidad_a == "Lote bajo carpa (cámara de fumigación)" else check_off,
                         'check_silo': check_on if modalidad_a == "Silos" else check_off,
-                        'check_estructura': check_on if modalidad_a == "Estructura completa" else check_off,
+                        'check_estructura': check_on if modalidad_a == "Estructuras" else check_off,
                         'check_contenedor': check_on if modalidad_a == "Contenedores" else check_off,
                         'check_otro': check_on if modalidad_a == "Otros" else check_off,
                         'texto_otro': texto_otro_a if modalidad_a == "Otros" else "____________________"
@@ -538,13 +546,11 @@ elif st.session_state.app_mode == "AVISO":
                     if mapa_file:
                         mapa_path, _, _ = procesar_imagen_full(mapa_file)
                         if mapa_path:
-                            # Cambio 3: Reduje a 135mm para que no obligue el salto de página
                             context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(135))
                             
                     if firma_aviso:
                         firma_path = procesar_firma(firma_aviso)
                         if firma_path:
-                            # Cambio 4: Reduje a 40mm para ahorrar espacio vertical
                             context['firma_img'] = InlineImage(doc, firma_path, width=Mm(40))
 
                     doc.render(context)
