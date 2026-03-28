@@ -78,7 +78,7 @@ if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 if "word_aviso" not in st.session_state: st.session_state.word_aviso = None
 
-# Tablas Molinos (ESTÁTICAS PARA EVITAR BORRADOS FANTASMA)
+# Tablas Molinos 
 if "df_d_mol" not in st.session_state:
     st.session_state.df_d_mol = pd.DataFrame([
         {"Piso": "Subterráneo", "Bandejas": 10, "Mini-Ropes": 2}, {"Piso": "Piso 1", "Bandejas": 10, "Mini-Ropes": 2},
@@ -92,7 +92,7 @@ if "df_m_mol" not in st.session_state:
         for h in ["19:00", "00:00", "07:00", "13:00"]: d_m.append([f_s, h, 300, 310, 320, 305, 300, 290])
     st.session_state.df_m_mol = pd.DataFrame(d_m, columns=["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "Piso 5"])
 
-# Tablas Estructuras (AMPLIADO A 10 PUNTOS)
+# Tablas Estructuras 
 if "df_d_est" not in st.session_state:
     st.session_state.df_d_est = pd.DataFrame([{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}])
 if "nom_p" not in st.session_state: st.session_state.nom_p = [f"Punto {i+1}" for i in range(10)]
@@ -102,7 +102,16 @@ if "df_m_est" not in st.session_state:
     cols_est = ["Fecha", "Hora"] + [f"P{i+1}" for i in range(10)]
     st.session_state.df_m_est = pd.DataFrame(d_me, columns=cols_est)
 
-# --- BASES DE DATOS FIJAS DE RESPALDO ---
+# --- BASES DE DATOS SEPARADAS ---
+DATABASE_MOLINOS = {
+    "MOLINO CASABLANCA": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Alejandro Galaz N° 500, Casablanca", "volumen": 4850},
+    "MOLINO LA ESTAMPA": {"cliente": "MOLINO LA ESTAMPA S.A.", "rut": "90.828.000-8", "direccion": "Fermin Vivaceta 1053, Independencia", "volumen": 5500},
+    "MOLINO FERRER": {"cliente": "MOLINO FERRER HERMANOS S.A.", "rut": "76.000.000-3", "direccion": "Baquedano N° 647, San Bernardo", "volumen": 8127},
+    "MOLINO EXPOSICIÓN": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Exposición N° 1657, Estación Central", "volumen": 7502},
+    "MOLINO LINDEROS": {"cliente": "MOLINO LINDEROS S.A.", "rut": "76.000.000-5", "direccion": "Villaseca Nº 1195, Buin", "volumen": 4800},
+    "MOLINO MAIPÚ": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Avenida Pajarito N° 1046, Maipú", "volumen": 4059}
+}
+
 DATABASE_ESTRUCTURAS_EXTRA = {
     "MOLINO PUENTE ALTO": {"cliente": "MOLINO PUENTE ALTO", "rut": "76.000.000-7", "direccion": "Calle Balmaceda 27, Puente Alto, Santiago RM."},
     "CV TRADING": {"cliente": "CV TRADING", "rut": "76.000.000-8", "direccion": "Camino Valdivia de Paine S/N, Buin"},
@@ -141,8 +150,9 @@ if csv_path:
                 DATABASE_ESTRUCTURAS_EXTRA[n_planta] = new_client
     except: pass
 
+DATABASE_MOLINOS["OTRO"] = {"cliente": "", "rut": "", "direccion": "", "volumen": 0}
 DATABASE_ESTRUCTURAS_EXTRA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
-DATABASE_MOLINOS = DATABASE_ESTRUCTURAS_EXTRA 
+
 LISTA_REPRESENTANTES = ["Nicholas Palma", "Vicente Madariaga", "Sebastián Carrillo", "Stefano Pernigotti", "Herbert Diaz", "Juan Callofa", "Maximiliano Caro", "Pavel Sotomayor", "OTRO"]
 
 # --- FUNCIONES UTILITARIAS ---
@@ -396,7 +406,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN (CON CHECKBOXES MÁGICOS)
+# LÓGICA: AVISO DE FUMIGACIÓN (V16.2 - CAMPOS COMPLETOS)
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     with st.sidebar:
@@ -411,32 +421,58 @@ elif st.session_state.app_mode == "AVISO":
     else:
         st.markdown("Asegúrate de haber subido el archivo **`plantilla_aviso.docx`** a tu GitHub con las etiquetas correspondientes.")
         
-        st.subheader("📝 I. Datos del Cliente")
+        st.subheader("📝 I. Datos de Emisión y Cliente")
         op_a = st.selectbox("Seleccione Cliente", list(DATABASE_ESTRUCTURAS_EXTRA.keys()))
         db_a = DATABASE_ESTRUCTURAS_EXTRA
         
-        col_a1, col_a2 = st.columns(2)
+        col_a1, col_a2, col_a3 = st.columns(3)
         with col_a1:
             cliente_a = st.text_input("Razón Social", db_a[op_a].get("cliente", op_a))
-            contacto_a = st.text_input("Atención a (Nombre/Cargo)", "Jefe de Planta")
+            rut_cliente_a = st.text_input("RUT Cliente", db_a[op_a].get("rut", ""))
+            contacto_a = st.text_input("Atención a (Contacto)", "Jefe de Planta")
         with col_a2:
             dir_a = st.text_input("Dirección", db_a[op_a].get("direccion", ""))
+            comuna_a = st.text_input("Comuna", "")
+            tel_cliente_a = st.text_input("Teléfono Cliente", "")
+        with col_a3:
             fecha_emision_a = st.date_input("Fecha de emisión del documento", datetime.date.today())
+            st.info("La *Hora de Emisión* se tomará automáticamente del sistema al generar el archivo.")
 
-        st.subheader("☣️ II. Datos de la Fumigación")
-        col_f1, col_f2, col_f3 = st.columns(3)
+        st.subheader("👨‍💼 II. Datos del Representante (Rentokil)")
+        col_r1, col_r2, col_r3 = st.columns(3)
+        with col_r1:
+            rep_a_sel = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES, key="rep_sel_a")
+            if rep_a_sel == "OTRO":
+                repre_a = st.text_input("Nombre Representante Manual:", key="rep_man_a")
+            else:
+                repre_a = rep_a_sel
+        with col_r2:
+            rut_repre_a = st.text_input("RUT Representante", "")
+        with col_r3:
+            correo_repre_a = st.text_input("Correo Representante", "")
+
+        st.subheader("☣️ III. Detalles Técnicos de la Fumigación")
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         with col_f1:
             fecha_fumi_a = st.date_input("Fecha de Fumigación", datetime.date.today() + datetime.timedelta(days=2))
+            tipo_fum_a = st.selectbox("Tipo de Fumigación", ["Preventiva", "Curativa"])
         with col_f2:
-            hora_ini_a = st.time_input("Hora de Inicio", datetime.time(9, 0))
+            hora_ini_a = st.time_input("Hora Inicio Inyección", datetime.time(9, 0))
+            hora_ter_a = st.time_input("Hora Fin Ventilación", datetime.time(18, 0))
         with col_f3:
-            hora_ter_a = st.time_input("Hora de Término", datetime.time(18, 0))
+            horas_exp_a = st.number_input("Horas de Exposición", value=72)
+            dosis_a = st.text_input("Dosis Planificada", "3 g/m3")
+        with col_f4:
+            estructura_lote_a = st.text_input("Estructura / Lote a Tratar", "Lote 1")
+            areas_a = st.text_input("Área General", "Bodega Principal")
             
-        areas_a = st.text_input("Áreas a Tratar", "Sector Silos / Bodega Principal")
-        producto_a = st.selectbox("Producto Fumigante", ["Fosfina (Fosfuro de Aluminio)", "Fosfuro de Magnesio", "Bromuro de Metilo"])
+        col_f5, col_f6 = st.columns(2)
+        with col_f5:
+            producto_a = st.text_input("Mercadería / Producto a Tratar (Cultivo)", "Nueces de exportación")
+        with col_f6:
+            quimico_a = st.selectbox("Químico (Fumigante)", ["Fosfina (Fosfuro de Aluminio)", "Fosfuro de Magnesio", "Bromuro de Metilo"])
 
-        # --- SECCIÓN PARA LOS CHECKBOXES DEL WORD ---
-        st.subheader("🛠️ III. Modalidad de Tratamiento")
+        st.subheader("🛠️ IV. Modalidad de Tratamiento")
         modalidad_a = st.selectbox("Seleccione la modalidad para marcar en el documento", 
                                    ["Lote bajo carpa (cámara de fumigación)", "Silos", "Estructura completa", "Contenedores", "Otros"])
         
@@ -444,12 +480,12 @@ elif st.session_state.app_mode == "AVISO":
         if modalidad_a == "Otros":
             texto_otro_a = st.text_input("Especifique qué otro tratamiento:")
 
-        st.subheader("🗺️ IV. Mapa y Firma")
+        st.subheader("🗺️ V. Mapa y Firma")
         col_img1, col_img2 = st.columns(2)
         with col_img1:
             mapa_file = st.file_uploader("Sube el Mapa de Georreferencia", type=["png", "jpg", "jpeg", "heic"])
         with col_img2:
-            firma_aviso = st.file_uploader("Firma del Responsable", type=["png", "jpg", "jpeg", "heic"])
+            firma_aviso = st.file_uploader("Firma del Responsable Rentokil", type=["png", "jpg", "jpeg", "heic"])
 
         if st.button("🚀 GENERAR DOCUMENTO NOTIFICACIÓN", use_container_width=True, type="primary"):
             if not os.path.exists("plantilla_aviso.docx"):
@@ -458,22 +494,35 @@ elif st.session_state.app_mode == "AVISO":
                 try:
                     doc = DocxTemplate("plantilla_aviso.docx")
                     
-                    # Símbolos Unicode para los cuadraditos
                     check_on = "☒"
                     check_off = "☐"
                     
+                    # DICCIONARIO DE ETIQUETAS -> VARIABLES
                     context = {
                         'fecha_emision': format_fecha_es(fecha_emision_a),
+                        'hora_emision': datetime.datetime.now().strftime("%H:%M"),
                         'cliente': cliente_a,
+                        'rut_cliente': rut_cliente_a,
+                        'tel_cliente': tel_cliente_a,
+                        'comuna': comuna_a,
                         'direccion': dir_a,
                         'contacto': contacto_a,
+                        
+                        'nombre_repre': repre_a,
+                        'rut_repre': rut_repre_a,
+                        'correo_repre': correo_repre_a,
+                        
                         'fecha_fumi': format_fecha_es(fecha_fumi_a),
                         'hora_ini': hora_ini_a.strftime("%H:%M"),
                         'hora_ter': hora_ter_a.strftime("%H:%M"),
+                        'horas_exp': str(horas_exp_a),
+                        'dosis': dosis_a,
+                        'tipo_fum': tipo_fum_a,
+                        'estructura_lote': estructura_lote_a,
                         'areas': areas_a,
                         'producto': producto_a,
+                        'quimico': quimico_a,
                         
-                        # Inyección lógica de checkboxes
                         'check_carpa': check_on if modalidad_a == "Lote bajo carpa (cámara de fumigación)" else check_off,
                         'check_silo': check_on if modalidad_a == "Silos" else check_off,
                         'check_estructura': check_on if modalidad_a == "Estructura completa" else check_off,
@@ -482,32 +531,27 @@ elif st.session_state.app_mode == "AVISO":
                         'texto_otro': texto_otro_a if modalidad_a == "Otros" else "____________________"
                     }
 
-                    # Procesar y pegar imágenes
                     mapa_path = None
                     firma_path = None
                     
                     if mapa_file:
                         mapa_path, _, _ = procesar_imagen_full(mapa_file)
                         if mapa_path:
-                            # Ajustamos el mapa a un ancho máximo para que no se salga de la hoja (150mm es ideal)
                             context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(150))
                             
                     if firma_aviso:
                         firma_path = procesar_firma(firma_aviso)
                         if firma_path:
-                            # La firma un poco más pequeña (50mm)
                             context['firma_img'] = InlineImage(doc, firma_path, width=Mm(50))
 
                     doc.render(context)
                     
-                    # Guardar archivo generado en memoria temporal
                     tmp_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
                     doc.save(tmp_docx.name)
                     
                     with open(tmp_docx.name, "rb") as f:
                         st.session_state.word_aviso = f.read()
                         
-                    # Limpieza temporal
                     if mapa_path and os.path.exists(mapa_path): os.remove(mapa_path)
                     if firma_path and os.path.exists(firma_path): os.remove(firma_path)
                     
@@ -769,7 +813,7 @@ elif st.session_state.app_mode == "MOLINOS":
             
             pdf.t_seccion("I", "PLAN DE SELLADO Y LIMPIEZA")
             pdf.set_font("Arial", "", 10)
-            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l_mol} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev_mol} a las {hora_rev_mol} hours.")
+            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l_mol} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev_mol} a las {hora_rev_mol} horas.")
             pdf.ln(3)
             
             if hay_obs_mol and txt_obs_mol:
