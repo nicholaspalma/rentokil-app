@@ -69,7 +69,7 @@ if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 
-# Tablas Molinos 
+# Tablas Molinos (ESTÁTICAS PARA EVITAR BORRADOS FANTASMA)
 if "df_d_mol" not in st.session_state:
     st.session_state.df_d_mol = pd.DataFrame([
         {"Piso": "Subterráneo", "Bandejas": 10, "Mini-Ropes": 2}, {"Piso": "Piso 1", "Bandejas": 10, "Mini-Ropes": 2},
@@ -83,7 +83,7 @@ if "df_m_mol" not in st.session_state:
         for h in ["19:00", "00:00", "07:00", "13:00"]: d_m.append([f_s, h, 300, 310, 320, 305, 300, 290])
     st.session_state.df_m_mol = pd.DataFrame(d_m, columns=["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "Piso 5"])
 
-# Tablas Estructuras 
+# Tablas Estructuras (AMPLIADO A 10 PUNTOS)
 if "df_d_est" not in st.session_state:
     st.session_state.df_d_est = pd.DataFrame([{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}])
 if "nom_p" not in st.session_state: st.session_state.nom_p = [f"Punto {i+1}" for i in range(10)]
@@ -93,7 +93,16 @@ if "df_m_est" not in st.session_state:
     cols_est = ["Fecha", "Hora"] + [f"P{i+1}" for i in range(10)]
     st.session_state.df_m_est = pd.DataFrame(d_me, columns=cols_est)
 
-# --- BASES DE DATOS FIJAS DE RESPALDO ---
+# --- BASES DE DATOS SEPARADAS Y RESTAURADAS ---
+DATABASE_MOLINOS = {
+    "MOLINO CASABLANCA": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Alejandro Galaz N° 500, Casablanca", "volumen": 4850},
+    "MOLINO LA ESTAMPA": {"cliente": "MOLINO LA ESTAMPA S.A.", "rut": "90.828.000-8", "direccion": "Fermin Vivaceta 1053, Independencia", "volumen": 5500},
+    "MOLINO FERRER": {"cliente": "MOLINO FERRER HERMANOS S.A.", "rut": "76.000.000-3", "direccion": "Baquedano N° 647, San Bernardo", "volumen": 8127},
+    "MOLINO EXPOSICIÓN": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Exposición N° 1657, Estación Central", "volumen": 7502},
+    "MOLINO LINDEROS": {"cliente": "MOLINO LINDEROS S.A.", "rut": "76.000.000-5", "direccion": "Villaseca Nº 1195, Buin", "volumen": 4800},
+    "MOLINO MAIPÚ": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Avenida Pajarito N° 1046, Maipú", "volumen": 4059}
+}
+
 DATABASE_ESTRUCTURAS_EXTRA = {
     "MOLINO PUENTE ALTO": {"cliente": "MOLINO PUENTE ALTO", "rut": "76.000.000-7", "direccion": "Calle Balmaceda 27, Puente Alto, Santiago RM."},
     "CV TRADING": {"cliente": "CV TRADING", "rut": "76.000.000-8", "direccion": "Camino Valdivia de Paine S/N, Buin"},
@@ -123,16 +132,19 @@ if csv_path:
         for _, row in df_csv.iterrows():
             n_planta = str(row[c_planta]).strip()
             if n_planta and n_planta.lower() != 'nan':
-                DATABASE_ESTRUCTURAS_EXTRA[n_planta] = {
+                new_client = {
                     "cliente": str(row[c_cliente]).strip() if c_cliente else n_planta,
                     "rut": str(row[c_rut]).strip() if c_rut else "",
                     "direccion": str(row[c_dir]).strip() if c_dir else "",
                     "volumen": 0
                 }
+                DATABASE_ESTRUCTURAS_EXTRA[n_planta] = new_client
+                DATABASE_MOLINOS[n_planta] = new_client
     except: pass
 
+DATABASE_MOLINOS["OTRO"] = {"cliente": "", "rut": "", "direccion": "", "volumen": 0}
 DATABASE_ESTRUCTURAS_EXTRA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
-DATABASE_MOLINOS = DATABASE_ESTRUCTURAS_EXTRA 
+
 LISTA_REPRESENTANTES = ["Nicholas Palma", "Vicente Madariaga", "Sebastián Carrillo", "Stefano Pernigotti", "Herbert Diaz", "Juan Callofa", "Maximiliano Caro", "Pavel Sotomayor", "OTRO"]
 
 # --- FUNCIONES UTILITARIAS ---
@@ -437,8 +449,8 @@ elif st.session_state.app_mode == "VISITA":
     st.subheader("⚙️ V. Análisis Operativo")
     col_o1, col_o2 = st.columns(2)
     with col_o1:
-        tipo_piso = st.selectbox("Tipo de piso", ["Cemento pulido", "Asfalto", "Tierra", "Baldosa", "Otro"])
-        sellado = st.selectbox("Sellado recomendado", ["Cinta PVC", "Culebras de arena", "Poliuretano expansivo", "Otro"])
+        tipo_piso = st.selectbox("Tipo de piso", ["Cemento pulido", "Asfalto", "Tierra", "Piso de losa", "Otro"])
+        sellado = st.selectbox("Sellado recomendado", ["Cinta PVC", "Mangas de arena", "AGOREX", "Otro"])
     with col_o2:
         traer_jsystem = st.checkbox("Traer J-System", value=True)
         traer_manga = st.checkbox("Traer manga de riego", value=True)
@@ -536,7 +548,7 @@ elif st.session_state.app_mode == "MOLINOS":
 
     st.title("🏭 Informe y Certificado Molinos")
     st.subheader("I. Datos Generales")
-    opcion = st.selectbox("Seleccione Planta", list(DATABASE_MOLINOS.keys()) + ["OTRO"])
+    opcion = st.selectbox("Seleccione Planta", list(DATABASE_MOLINOS.keys()))
     d = DATABASE_MOLINOS.get(opcion, {"cliente": "", "rut": "", "direccion": "", "volumen": 0})
     
     col1, col2, col3 = st.columns(3)
@@ -609,7 +621,6 @@ elif st.session_state.app_mode == "MOLINOS":
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
         firma_path_guardada = None
         try:
-            # FILTRO ANTI-NONE PARA MOLINOS
             df_m_clean = df_m_mol_val.copy()
             df_m_clean['Fecha_str'] = df_m_clean['Fecha'].astype(str).str.strip().str.lower()
             df_m_clean['Hora_str'] = df_m_clean['Hora'].astype(str).str.strip().str.lower()
@@ -741,9 +752,8 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
     st.title("🏗️ Informe y Certificado Estructuras")
     st.subheader("I. Datos Generales")
-    LIST_CL = list(DATABASE_MOLINOS.keys()) + list(DATABASE_ESTRUCTURAS_EXTRA.keys())
-    op_e = st.selectbox("Cliente", LIST_CL)
-    db_ref = DATABASE_MOLINOS if op_e in DATABASE_MOLINOS else DATABASE_ESTRUCTURAS_EXTRA
+    op_e = st.selectbox("Cliente", list(DATABASE_ESTRUCTURAS_EXTRA.keys()))
+    db_ref = DATABASE_ESTRUCTURAS_EXTRA
     
     col_e1, col_e2, col_e3 = st.columns(3)
     with col_e1:
@@ -817,7 +827,8 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
         firma_path_guardada = None
         try:
-            # FILTRO ANTI-NONE PARA ESTRUCTURAS
+            firma_path_guardada = procesar_firma(firma_e) if firma_e else ('firma.png' if os.path.exists('firma.png') else None)
+            
             df_m_pdf = df_med_est_val.copy()
             df_m_pdf.columns = ["Fecha", "Hora"] + st.session_state.nom_p
             
@@ -826,9 +837,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             mask = ~((df_m_pdf['Fecha_str'].isin(['none', 'nan', ''])) | (df_m_pdf['Hora_str'].isin(['none', 'nan', ''])))
             df_m_pdf = df_m_pdf[mask].drop(columns=['Fecha_str', 'Hora_str'])
 
-            firma_path_guardada = procesar_firma(firma_e) if firma_e else ('firma.png' if os.path.exists('firma.png') else None)
-
-            # FILTRO DINÁMICO: Conservar puntos con datos o renombrados
             cols_to_keep = ["Fecha", "Hora"]
             for i in range(2, len(df_m_pdf.columns)):
                 col_name = df_m_pdf.columns[i]
