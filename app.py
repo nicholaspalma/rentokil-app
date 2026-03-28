@@ -11,6 +11,14 @@ import traceback
 import gc
 import numpy as np
 
+# --- NUEVAS LIBRERÍAS PARA PLANTILLAS WORD ---
+try:
+    from docxtpl import DocxTemplate, InlineImage
+    from docx.shared import Mm
+    DOCXTPL_INSTALLED = True
+except ImportError:
+    DOCXTPL_INSTALLED = False
+
 # --- CONFIGURACIÓN PARA IMÁGENES ROTAS ---
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -68,6 +76,7 @@ if "pdf_informe" not in st.session_state: st.session_state.pdf_informe = None
 if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
+if "word_aviso" not in st.session_state: st.session_state.word_aviso = None
 
 # Tablas Molinos (ESTÁTICAS PARA EVITAR BORRADOS FANTASMA)
 if "df_d_mol" not in st.session_state:
@@ -93,16 +102,7 @@ if "df_m_est" not in st.session_state:
     cols_est = ["Fecha", "Hora"] + [f"P{i+1}" for i in range(10)]
     st.session_state.df_m_est = pd.DataFrame(d_me, columns=cols_est)
 
-# --- BASES DE DATOS SEPARADAS Y RESTAURADAS ---
-DATABASE_MOLINOS = {
-    "MOLINO CASABLANCA": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Alejandro Galaz N° 500, Casablanca", "volumen": 4850},
-    "MOLINO LA ESTAMPA": {"cliente": "MOLINO LA ESTAMPA S.A.", "rut": "90.828.000-8", "direccion": "Fermin Vivaceta 1053, Independencia", "volumen": 5500},
-    "MOLINO FERRER": {"cliente": "MOLINO FERRER HERMANOS S.A.", "rut": "76.000.000-3", "direccion": "Baquedano N° 647, San Bernardo", "volumen": 8127},
-    "MOLINO EXPOSICIÓN": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Exposición N° 1657, Estación Central", "volumen": 7502},
-    "MOLINO LINDEROS": {"cliente": "MOLINO LINDEROS S.A.", "rut": "76.000.000-5", "direccion": "Villaseca Nº 1195, Buin", "volumen": 4800},
-    "MOLINO MAIPÚ": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Avenida Pajarito N° 1046, Maipú", "volumen": 4059}
-}
-
+# --- BASES DE DATOS FIJAS DE RESPALDO ---
 DATABASE_ESTRUCTURAS_EXTRA = {
     "MOLINO PUENTE ALTO": {"cliente": "MOLINO PUENTE ALTO", "rut": "76.000.000-7", "direccion": "Calle Balmaceda 27, Puente Alto, Santiago RM."},
     "CV TRADING": {"cliente": "CV TRADING", "rut": "76.000.000-8", "direccion": "Camino Valdivia de Paine S/N, Buin"},
@@ -139,12 +139,10 @@ if csv_path:
                     "volumen": 0
                 }
                 DATABASE_ESTRUCTURAS_EXTRA[n_planta] = new_client
-                DATABASE_MOLINOS[n_planta] = new_client
     except: pass
 
-DATABASE_MOLINOS["OTRO"] = {"cliente": "", "rut": "", "direccion": "", "volumen": 0}
 DATABASE_ESTRUCTURAS_EXTRA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
-
+DATABASE_MOLINOS = DATABASE_ESTRUCTURAS_EXTRA 
 LISTA_REPRESENTANTES = ["Nicholas Palma", "Vicente Madariaga", "Sebastián Carrillo", "Stefano Pernigotti", "Herbert Diaz", "Juan Callofa", "Maximiliano Caro", "Pavel Sotomayor", "OTRO"]
 
 # --- FUNCIONES UTILITARIAS ---
@@ -169,9 +167,7 @@ def procesar_imagen(uploaded_file):
         image = Image.open(uploaded_file)
         image = ImageOps.exif_transpose(image)
         if image.mode != 'RGB': image = image.convert('RGB')
-        
         image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS, centering=(0.5, 0.95))
-        
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
         image_fixed.save(tmp.name, format='JPEG', quality=85, optimize=True)
         image.close(); image_fixed.close(); del image; del image_fixed; gc.collect()
@@ -376,7 +372,7 @@ if st.session_state.app_mode == "HOME":
     
     st.markdown("---")
     
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c_new = st.columns(4)
     with c1:
         if st.button("🏭 MOLINOS\n(Técnico y Cert.)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "MOLINOS"; st.rerun()
@@ -386,6 +382,9 @@ if st.session_state.app_mode == "HOME":
     with c3:
         if st.button("📋 VISITA TÉCNICA\n(Evaluación Previa)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "VISITA"; st.rerun()
+    with c_new:
+        if st.button("📢 NOTIFICACIÓN\n(Aviso al Cliente)", use_container_width=True, type="primary"):
+            st.session_state.app_mode = "AVISO"; st.rerun()
             
     st.write("")
     c4, c5 = st.columns(2)
@@ -395,6 +394,137 @@ if st.session_state.app_mode == "HOME":
     with c5:
         if st.button("📄 CONVERTIR PDF A WORD\n(Transforma archivos)", use_container_width=True, type="secondary"):
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
+
+# ==============================================================================
+# LÓGICA: AVISO DE FUMIGACIÓN (CON CHECKBOXES MÁGICOS)
+# ==============================================================================
+elif st.session_state.app_mode == "AVISO":
+    with st.sidebar:
+        if os.path.exists("logo.png"): st.image("logo.png", width=120)
+        if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
+        st.info("Modo: Notificación de Fumigación")
+
+    st.title("📢 Generador de Aviso de Fumigación")
+    
+    if not DOCXTPL_INSTALLED:
+        st.error("⚠️ Para usar este módulo, debes agregar la palabra `docxtpl` a tu archivo `requirements.txt` en GitHub y esperar 2 minutos a que se instale.")
+    else:
+        st.markdown("Asegúrate de haber subido el archivo **`plantilla_aviso.docx`** a tu GitHub con las etiquetas correspondientes.")
+        
+        st.subheader("📝 I. Datos del Cliente")
+        op_a = st.selectbox("Seleccione Cliente", list(DATABASE_ESTRUCTURAS_EXTRA.keys()))
+        db_a = DATABASE_ESTRUCTURAS_EXTRA
+        
+        col_a1, col_a2 = st.columns(2)
+        with col_a1:
+            cliente_a = st.text_input("Razón Social", db_a[op_a].get("cliente", op_a))
+            contacto_a = st.text_input("Atención a (Nombre/Cargo)", "Jefe de Planta")
+        with col_a2:
+            dir_a = st.text_input("Dirección", db_a[op_a].get("direccion", ""))
+            fecha_emision_a = st.date_input("Fecha de emisión del documento", datetime.date.today())
+
+        st.subheader("☣️ II. Datos de la Fumigación")
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            fecha_fumi_a = st.date_input("Fecha de Fumigación", datetime.date.today() + datetime.timedelta(days=2))
+        with col_f2:
+            hora_ini_a = st.time_input("Hora de Inicio", datetime.time(9, 0))
+        with col_f3:
+            hora_ter_a = st.time_input("Hora de Término", datetime.time(18, 0))
+            
+        areas_a = st.text_input("Áreas a Tratar", "Sector Silos / Bodega Principal")
+        producto_a = st.selectbox("Producto Fumigante", ["Fosfina (Fosfuro de Aluminio)", "Fosfuro de Magnesio", "Bromuro de Metilo"])
+
+        # --- SECCIÓN PARA LOS CHECKBOXES DEL WORD ---
+        st.subheader("🛠️ III. Modalidad de Tratamiento")
+        modalidad_a = st.selectbox("Seleccione la modalidad para marcar en el documento", 
+                                   ["Lote bajo carpa (cámara de fumigación)", "Silos", "Estructura completa", "Contenedores", "Otros"])
+        
+        texto_otro_a = "____________________"
+        if modalidad_a == "Otros":
+            texto_otro_a = st.text_input("Especifique qué otro tratamiento:")
+
+        st.subheader("🗺️ IV. Mapa y Firma")
+        col_img1, col_img2 = st.columns(2)
+        with col_img1:
+            mapa_file = st.file_uploader("Sube el Mapa de Georreferencia", type=["png", "jpg", "jpeg", "heic"])
+        with col_img2:
+            firma_aviso = st.file_uploader("Firma del Responsable", type=["png", "jpg", "jpeg", "heic"])
+
+        if st.button("🚀 GENERAR DOCUMENTO NOTIFICACIÓN", use_container_width=True, type="primary"):
+            if not os.path.exists("plantilla_aviso.docx"):
+                st.error("❌ No se encontró el archivo `plantilla_aviso.docx`. Por favor, súbelo a GitHub en la misma carpeta.")
+            else:
+                try:
+                    doc = DocxTemplate("plantilla_aviso.docx")
+                    
+                    # Símbolos Unicode para los cuadraditos
+                    check_on = "☒"
+                    check_off = "☐"
+                    
+                    context = {
+                        'fecha_emision': format_fecha_es(fecha_emision_a),
+                        'cliente': cliente_a,
+                        'direccion': dir_a,
+                        'contacto': contacto_a,
+                        'fecha_fumi': format_fecha_es(fecha_fumi_a),
+                        'hora_ini': hora_ini_a.strftime("%H:%M"),
+                        'hora_ter': hora_ter_a.strftime("%H:%M"),
+                        'areas': areas_a,
+                        'producto': producto_a,
+                        
+                        # Inyección lógica de checkboxes
+                        'check_carpa': check_on if modalidad_a == "Lote bajo carpa (cámara de fumigación)" else check_off,
+                        'check_silo': check_on if modalidad_a == "Silos" else check_off,
+                        'check_estructura': check_on if modalidad_a == "Estructura completa" else check_off,
+                        'check_contenedor': check_on if modalidad_a == "Contenedores" else check_off,
+                        'check_otro': check_on if modalidad_a == "Otros" else check_off,
+                        'texto_otro': texto_otro_a if modalidad_a == "Otros" else "____________________"
+                    }
+
+                    # Procesar y pegar imágenes
+                    mapa_path = None
+                    firma_path = None
+                    
+                    if mapa_file:
+                        mapa_path, _, _ = procesar_imagen_full(mapa_file)
+                        if mapa_path:
+                            # Ajustamos el mapa a un ancho máximo para que no se salga de la hoja (150mm es ideal)
+                            context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(150))
+                            
+                    if firma_aviso:
+                        firma_path = procesar_firma(firma_aviso)
+                        if firma_path:
+                            # La firma un poco más pequeña (50mm)
+                            context['firma_img'] = InlineImage(doc, firma_path, width=Mm(50))
+
+                    doc.render(context)
+                    
+                    # Guardar archivo generado en memoria temporal
+                    tmp_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    doc.save(tmp_docx.name)
+                    
+                    with open(tmp_docx.name, "rb") as f:
+                        st.session_state.word_aviso = f.read()
+                        
+                    # Limpieza temporal
+                    if mapa_path and os.path.exists(mapa_path): os.remove(mapa_path)
+                    if firma_path and os.path.exists(firma_path): os.remove(firma_path)
+                    
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error generando el documento: {e}")
+                    st.code(traceback.format_exc())
+
+    if st.session_state.get("word_aviso") is not None:
+        st.success("✅ Documento de Aviso/Notificación Generado Exitosamente")
+        st.download_button(
+            label="📄 DESCARGAR AVISO EN WORD",
+            data=st.session_state.word_aviso,
+            file_name="Aviso_Notificacion_Rentokil.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True
+        )
 
 # ==============================================================================
 # LÓGICA: VISITA TÉCNICA 
@@ -639,7 +769,7 @@ elif st.session_state.app_mode == "MOLINOS":
             
             pdf.t_seccion("I", "PLAN DE SELLADO Y LIMPIEZA")
             pdf.set_font("Arial", "", 10)
-            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l_mol} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev_mol} a las {hora_rev_mol} horas.")
+            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l_mol} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev_mol} a las {hora_rev_mol} hours.")
             pdf.ln(3)
             
             if hay_obs_mol and txt_obs_mol:
@@ -752,8 +882,9 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
     st.title("🏗️ Informe y Certificado Estructuras")
     st.subheader("I. Datos Generales")
-    op_e = st.selectbox("Cliente", list(DATABASE_ESTRUCTURAS_EXTRA.keys()))
-    db_ref = DATABASE_ESTRUCTURAS_EXTRA
+    LIST_CL = list(DATABASE_MOLINOS.keys()) + list(DATABASE_ESTRUCTURAS_EXTRA.keys())
+    op_e = st.selectbox("Cliente", LIST_CL)
+    db_ref = DATABASE_MOLINOS if op_e in DATABASE_MOLINOS else DATABASE_ESTRUCTURAS_EXTRA
     
     col_e1, col_e2, col_e3 = st.columns(3)
     with col_e1:
