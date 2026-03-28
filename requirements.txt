@@ -5,3 +5,4 @@ fpdf
 Pillow
 pillow-heif
 pdf2docx
+docxtpl
