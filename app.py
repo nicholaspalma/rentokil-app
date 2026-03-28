@@ -69,7 +69,7 @@ if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 
-# Tablas Molinos (ESTÁTICAS PARA EVITAR BORRADOS FANTASMA)
+# Tablas Molinos 
 if "df_d_mol" not in st.session_state:
     st.session_state.df_d_mol = pd.DataFrame([
         {"Piso": "Subterráneo", "Bandejas": 10, "Mini-Ropes": 2}, {"Piso": "Piso 1", "Bandejas": 10, "Mini-Ropes": 2},
@@ -83,7 +83,7 @@ if "df_m_mol" not in st.session_state:
         for h in ["19:00", "00:00", "07:00", "13:00"]: d_m.append([f_s, h, 300, 310, 320, 305, 300, 290])
     st.session_state.df_m_mol = pd.DataFrame(d_m, columns=["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "Piso 5"])
 
-# Tablas Estructuras (AMPLIADO A 10 PUNTOS)
+# Tablas Estructuras 
 if "df_d_est" not in st.session_state:
     st.session_state.df_d_est = pd.DataFrame([{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}])
 if "nom_p" not in st.session_state: st.session_state.nom_p = [f"Punto {i+1}" for i in range(10)]
@@ -133,8 +133,6 @@ if csv_path:
 
 DATABASE_ESTRUCTURAS_EXTRA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
 DATABASE_MOLINOS = DATABASE_ESTRUCTURAS_EXTRA 
-
-# --- REPRESENTANTES ACTUALIZADOS ---
 LISTA_REPRESENTANTES = ["Nicholas Palma", "Vicente Madariaga", "Sebastián Carrillo", "Stefano Pernigotti", "Herbert Diaz", "Juan Callofa", "Maximiliano Caro", "Pavel Sotomayor", "OTRO"]
 
 # --- FUNCIONES UTILITARIAS ---
@@ -569,8 +567,6 @@ elif st.session_state.app_mode == "MOLINOS":
     col_l1, col_l2 = st.columns(2)
     with col_l1:
         enc_l_mol = st.text_input("Encargado Limpieza (Cliente)", "Jefe de Planta")
-        
-        # NUEVO SISTEMA DE REPRESENTANTES (MOLINOS)
         rep_m_sel = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES, key="rep_sel_m")
         if rep_m_sel == "OTRO":
             rep_r = st.text_input("Ingrese nombre del Representante manualmente:", key="rep_man_m")
@@ -613,6 +609,13 @@ elif st.session_state.app_mode == "MOLINOS":
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
         firma_path_guardada = None
         try:
+            # FILTRO ANTI-NONE PARA MOLINOS
+            df_m_clean = df_m_mol_val.copy()
+            df_m_clean['Fecha_str'] = df_m_clean['Fecha'].astype(str).str.strip().str.lower()
+            df_m_clean['Hora_str'] = df_m_clean['Hora'].astype(str).str.strip().str.lower()
+            mask = ~((df_m_clean['Fecha_str'].isin(['none', 'nan', ''])) | (df_m_clean['Hora_str'].isin(['none', 'nan', ''])))
+            df_m_clean = df_m_clean[mask].drop(columns=['Fecha_str', 'Hora_str'])
+
             firma_path_guardada = procesar_firma(firma_file) if firma_file else ('firma.png' if os.path.exists('firma.png') else None)
             
             pdf = InformePDF()
@@ -649,12 +652,12 @@ elif st.session_state.app_mode == "MOLINOS":
             
             pdf.t_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)", force=True)
             fig, ax = plt.subplots(figsize=(10, 5))
-            e_x = df_m_mol_val["Fecha"].astype(str) + "\n" + df_m_mol_val["Hora"].astype(str)
+            e_x = df_m_clean["Fecha"].astype(str) + "\n" + df_m_clean["Hora"].astype(str)
             h_g = False
             
-            for i in range(2, len(df_m_mol_val.columns)):
-                col_name = df_m_mol_val.columns[i]
-                val = pd.to_numeric(df_m_mol_val.iloc[:, i], errors='coerce').fillna(0)
+            for i in range(2, len(df_m_clean.columns)):
+                col_name = df_m_clean.columns[i]
+                val = pd.to_numeric(df_m_clean.iloc[:, i], errors='coerce').fillna(0)
                 if val.sum() > 0:
                     ax.plot(e_x, val, marker='o', label=col_name)
                     h_g = True
@@ -667,8 +670,8 @@ elif st.session_state.app_mode == "MOLINOS":
                 fig.savefig(tmp_g.name, dpi=300); pdf.image(tmp_g.name, x=10, w=190)
             pdf.ln(5)
             
-            cols_list = list(df_m_mol_val.columns)
-            pdf.tabla(cols_list, [[str(x) for x in r] for _, r in df_m_mol_val.iterrows()], [25, 15] + [25]* (len(cols_list)-2))
+            cols_list = list(df_m_clean.columns)
+            pdf.tabla(cols_list, [[str(x) for x in r] for _, r in df_m_clean.iterrows()], [25, 15] + [25]* (len(cols_list)-2))
             
             if fotos_meds: pdf.galeria(fotos_meds, "Evidencia de Monitoreo:")
             if fotos_anexo: pdf.t_seccion("V", "ANEXO FOTOGRÁFICO", force=True); pdf.galeria(fotos_anexo)
@@ -691,7 +694,7 @@ elif st.session_state.app_mode == "MOLINOS":
                 pdf.image(firma_path_guardada, x=75, w=60)
 
             # CERTIFICADO MOLINOS
-            flat_vals = df_m_mol_val.iloc[:, 2:].values.flatten()
+            flat_vals = df_m_clean.iloc[:, 2:].values.flatten()
             promedio_ppm = pd.to_numeric(pd.Series(flat_vals), errors='coerce').dropna().mean()
             promedio_ppm = 0 if pd.isna(promedio_ppm) else promedio_ppm
 
@@ -764,8 +767,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     col_l1, col_l2 = st.columns(2)
     with col_l1:
         enc_l = st.text_input("Encargado Limpieza", "Jefe de Turno")
-        
-        # NUEVO SISTEMA DE REPRESENTANTES (ESTRUCTURAS)
         rep_e_sel = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES, key="rep_sel_e")
         if rep_e_sel == "OTRO":
             rep_r = st.text_input("Ingrese nombre del Representante manualmente:", key="rep_man_e")
@@ -795,15 +796,12 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         h_ter_e = st.time_input("Hora Término", datetime.time(10, 0))
     h_exp_e = (datetime.datetime.combine(f_ter_e, h_ter_e) - datetime.datetime.combine(f_ini_e, h_ini_e)).total_seconds() / 3600
 
-    # 10 PUNTOS DE MEDICIÓN
-    st.markdown("**Puntos de Medición (Puede usar hasta 10)**")
-    c_n_r1 = st.columns(5)
-    c_n_r2 = st.columns(5)
-    c_all = c_n_r1 + c_n_r2
-
-    for i in range(10):
-        nom = c_all[i].text_input(f"Punto {i+1}", st.session_state.nom_p[i], key=f"pe_{i}")
+    c_n = st.columns(5)
+    n_cols_temp = ["Fecha", "Hora"]
+    for i in range(5): 
+        nom = c_n[i].text_input(f"Punto {i+1}", st.session_state.nom_p[i])
         st.session_state.nom_p[i] = nom
+        n_cols_temp.append(nom)
     
     col_conf = {"Fecha": "Fecha", "Hora": "Hora"}
     for i in range(10):
@@ -819,12 +817,18 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
         firma_path_guardada = None
         try:
-            firma_path_guardada = procesar_firma(firma_e) if firma_e else ('firma.png' if os.path.exists('firma.png') else None)
-            
+            # FILTRO ANTI-NONE PARA ESTRUCTURAS
             df_m_pdf = df_med_est_val.copy()
             df_m_pdf.columns = ["Fecha", "Hora"] + st.session_state.nom_p
+            
+            df_m_pdf['Fecha_str'] = df_m_pdf['Fecha'].astype(str).str.strip().str.lower()
+            df_m_pdf['Hora_str'] = df_m_pdf['Hora'].astype(str).str.strip().str.lower()
+            mask = ~((df_m_pdf['Fecha_str'].isin(['none', 'nan', ''])) | (df_m_pdf['Hora_str'].isin(['none', 'nan', ''])))
+            df_m_pdf = df_m_pdf[mask].drop(columns=['Fecha_str', 'Hora_str'])
 
-            # FILTRO DINÁMICO: Solo conservar los puntos de medición que se usaron
+            firma_path_guardada = procesar_firma(firma_e) if firma_e else ('firma.png' if os.path.exists('firma.png') else None)
+
+            # FILTRO DINÁMICO: Conservar puntos con datos o renombrados
             cols_to_keep = ["Fecha", "Hora"]
             for i in range(2, len(df_m_pdf.columns)):
                 col_name = df_m_pdf.columns[i]
