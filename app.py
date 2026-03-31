@@ -153,6 +153,13 @@ if csv_path:
 DATABASE_MOLINOS["OTRO"] = {"cliente": "", "rut": "", "direccion": "", "volumen": 0}
 DATABASE_ESTRUCTURAS_EXTRA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
 
+# --- BASE COMBINADA PARA MÓDULOS GLOBALES ---
+DATABASE_COMBINADA = {**DATABASE_MOLINOS, **DATABASE_ESTRUCTURAS_EXTRA}
+# Evitar duplicados de "OTRO"
+if "OTRO" in DATABASE_COMBINADA:
+    del DATABASE_COMBINADA["OTRO"]
+DATABASE_COMBINADA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
+
 LISTA_REPRESENTANTES = ["Nicholas Palma", "Vicente Madariaga", "Sebastián Carrillo", "Stefano Pernigotti", "Herbert Diaz", "Juan Callofa", "Maximiliano Caro", "Pavel Sotomayor", "OTRO"]
 
 # --- FUNCIONES UTILITARIAS ---
@@ -214,7 +221,7 @@ def procesar_firma(uploaded_file):
     except: return None
 
 # ==============================================================================
-# CLASE PDF: INFORME TÉCNICO Y DIÁLOGO
+# CLASE PDF: INFORME TÉCNICO Y TRABAJO
 # ==============================================================================
 class InformePDF(FPDF):
     def rounded_rect(self, x, y, w, h, r, style=''):
@@ -399,14 +406,14 @@ if st.session_state.app_mode == "HOME":
     st.write("")
     c4, c5 = st.columns(2)
     with c4:
-        if st.button("📸 INFORME DE DIÁLOGO\n(Fotos a Pantalla Completa)", use_container_width=True, type="secondary"):
-            st.session_state.app_mode = "DIALOGO"; st.rerun()
+        if st.button("📸 INFORME DE TRABAJO\n(Fotos a Pantalla Completa)", use_container_width=True, type="secondary"):
+            st.session_state.app_mode = "TRABAJO"; st.rerun()
     with c5:
         if st.button("📄 CONVERTIR PDF A WORD\n(Transforma archivos)", use_container_width=True, type="secondary"):
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN (V16.5 - CON PLAGA DINÁMICA Y QUÍMICOS NUEVOS)
+# LÓGICA: AVISO DE FUMIGACIÓN 
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     with st.sidebar:
@@ -422,8 +429,9 @@ elif st.session_state.app_mode == "AVISO":
         st.markdown("Asegúrate de haber subido el archivo **`plantilla_aviso.docx`** a tu GitHub con las etiquetas correspondientes.")
         
         st.subheader("📝 I. Datos de Emisión y Cliente")
-        op_a = st.selectbox("Seleccione Cliente", list(DATABASE_ESTRUCTURAS_EXTRA.keys()))
-        db_a = DATABASE_ESTRUCTURAS_EXTRA
+        # Usar la base de datos combinada
+        op_a = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()))
+        db_a = DATABASE_COMBINADA
         
         col_a1, col_a2, col_a3 = st.columns(3)
         with col_a1:
@@ -469,7 +477,7 @@ elif st.session_state.app_mode == "AVISO":
             
         col_f5, col_f6, col_f7 = st.columns(3)
         with col_f5:
-            producto_a = st.text_input("Mercadería / Producto a Tratar", "Nueces de exportación")
+            producto_a = st.text_input("Mercadería / Producto a Tratar (Cultivo)", "Nueces de exportación")
         with col_f6:
             quimico_a = st.selectbox("Químico (Fumigante)", ["Fosfina (Fosfuro de Aluminio)", "Fosfuro de Magnesio", "Ambos (Fosfuro de Aluminio y Magnesio)"])
         with col_f7:
@@ -481,8 +489,9 @@ elif st.session_state.app_mode == "AVISO":
                 st.text_input("Plaga Detectada", "N/A (Tratamiento Preventivo)", disabled=True)
 
         st.subheader("🛠️ IV. Modalidad de Tratamiento")
+        # Cambio: "Lote bajo carpa" en vez de "Lote bajo carpa (cámara de fumigación)"
         modalidad_a = st.selectbox("Seleccione la modalidad para marcar en el documento", 
-                                   ["Lote bajo carpa (cámara de fumigación)", "Silos", "Estructuras", "Contenedores", "Otros"])
+                                   ["Lote bajo carpa", "Silos", "Estructuras", "Contenedores", "Otros"])
         
         texto_otro_a = "____________________"
         if modalidad_a == "Otros":
@@ -532,7 +541,8 @@ elif st.session_state.app_mode == "AVISO":
                         'quimico': quimico_a,
                         'plaga': plaga_a,
                         
-                        'check_carpa': check_on if modalidad_a == "Lote bajo carpa (cámara de fumigación)" else check_off,
+                        # Correspondencia exacta con el selectbox
+                        'check_carpa': check_on if modalidad_a == "Lote bajo carpa" else check_off,
                         'check_silo': check_on if modalidad_a == "Silos" else check_off,
                         'check_estructura': check_on if modalidad_a == "Estructuras" else check_off,
                         'check_contenedor': check_on if modalidad_a == "Contenedores" else check_off,
@@ -546,12 +556,14 @@ elif st.session_state.app_mode == "AVISO":
                     if mapa_file:
                         mapa_path, _, _ = procesar_imagen_full(mapa_file)
                         if mapa_path:
-                            context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(135))
+                            # Ajuste de tamaño para evitar salto de página
+                            context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(130))
                             
                     if firma_aviso:
                         firma_path = procesar_firma(firma_aviso)
                         if firma_path:
-                            context['firma_img'] = InlineImage(doc, firma_path, width=Mm(40))
+                            # Firma ligeramente más pequeña para asegurar que quede en la misma página
+                            context['firma_img'] = InlineImage(doc, firma_path, width=Mm(35))
 
                     doc.render(context)
                     
@@ -594,8 +606,9 @@ elif st.session_state.app_mode == "VISITA":
     foto_portada = st.file_uploader("Sube aquí la Foto General de la Instalación", type=['png','jpg','jpeg','heic'], key="f_portada")
 
     st.subheader("📝 II. Datos Generales")
-    op_v = st.selectbox("Seleccione Cliente", list(DATABASE_ESTRUCTURAS_EXTRA.keys()))
-    db_v = DATABASE_ESTRUCTURAS_EXTRA
+    # Base de datos combinada
+    op_v = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()))
+    db_v = DATABASE_COMBINADA
     
     col_v1, col_v2 = st.columns(2)
     with col_v1:
@@ -935,9 +948,9 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
     st.title("🏗️ Informe y Certificado Estructuras")
     st.subheader("I. Datos Generales")
-    LIST_CL = list(DATABASE_MOLINOS.keys()) + list(DATABASE_ESTRUCTURAS_EXTRA.keys())
-    op_e = st.selectbox("Cliente", LIST_CL)
-    db_ref = DATABASE_MOLINOS if op_e in DATABASE_MOLINOS else DATABASE_ESTRUCTURAS_EXTRA
+    # Base de datos combinada
+    op_e = st.selectbox("Cliente", list(DATABASE_COMBINADA.keys()))
+    db_ref = DATABASE_COMBINADA
     
     col_e1, col_e2, col_e3 = st.columns(3)
     with col_e1:
@@ -1150,19 +1163,20 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         except Exception as e: st.error(f"Error al generar documentos: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA: INFORME DE DIÁLOGO
+# LÓGICA: INFORME DE TRABAJO (ANTES DIÁLOGO)
 # ==============================================================================
-elif st.session_state.app_mode == "DIALOGO":
+elif st.session_state.app_mode == "TRABAJO":
     with st.sidebar:
         if os.path.exists("logo.png"): st.image("logo.png", width=120)
         if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
-        st.info("Modo: Informe de Diálogo")
+        st.info("Modo: Informe de Trabajo")
         
-    st.title("📸 Informe de Diálogo (Pantalla Completa)")
+    st.title("📸 Informe de Trabajo (Pantalla Completa)")
     st.markdown("Este módulo genera un PDF oficial. La primera imagen acompaña la portada, las demás ocupan la hoja completa.")
     
-    op_d = st.selectbox("Seleccione Cliente", list(DATABASE_ESTRUCTURAS_EXTRA.keys()))
-    db_ref = DATABASE_ESTRUCTURAS_EXTRA
+    # Base de datos combinada
+    op_d = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()))
+    db_ref = DATABASE_COMBINADA
     
     col_d1, col_d2 = st.columns(2)
     with col_d1:
@@ -1174,14 +1188,14 @@ elif st.session_state.app_mode == "DIALOGO":
         
     fotos_dialogo = st.file_uploader("Sube TODAS las fotos aquí (Soporta 50+ imágenes)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
     
-    if st.button("🚀 GENERAR INFORME DE DIÁLOGO", use_container_width=True, type="primary"):
+    if st.button("🚀 GENERAR INFORME DE TRABAJO", use_container_width=True, type="primary"):
         if fotos_dialogo:
             try:
                 pdf = InformePDF()
                 pdf.add_page()
                 
                 pdf.ln(5); pdf.set_font("Arial", "B", 12); pdf.set_text_color(*COLOR_PRIMARIO)
-                pdf.cell(0, 8, "REGISTRO FOTOGRÁFICO DE DIÁLOGO", ln=1, align="C")
+                pdf.cell(0, 8, "REGISTRO FOTOGRÁFICO DE TRABAJO", ln=1, align="C")
                 pdf.set_text_color(0, 0, 0); pdf.ln(5)
                 
                 pdf.tabla_moderna(["CLIENTE / RAZÓN SOCIAL", "PLANTA", "FECHA"], [[str(cli_d), str(pla_d), format_fecha_es(fec_d)]], [80, 70, 40], color=COLOR_PRIMARIO)
@@ -1219,9 +1233,9 @@ elif st.session_state.app_mode == "DIALOGO":
                     pdf.output(tmp_d.name)
                     with open(tmp_d.name, "rb") as fd: st.session_state.pdf_dialogo = fd.read()
                 st.rerun()
-            except Exception as e: st.error(f"Error generando Diálogo: {e}"); st.code(traceback.format_exc())
+            except Exception as e: st.error(f"Error generando Informe de Trabajo: {e}"); st.code(traceback.format_exc())
         else:
-            st.warning("Debes subir al menos una foto para generar el informe de diálogo.")
+            st.warning("Debes subir al menos una foto para generar el informe de trabajo.")
 
 # ==============================================================================
 # LÓGICA: PDF A WORD
@@ -1276,9 +1290,9 @@ if st.session_state.app_mode in ["MOLINOS", "ESTRUCTURAS"]:
         if st.session_state.pdf_cert is not None:
             with c_btn2: st.download_button("📜 DESCARGAR CERTIFICADO", data=st.session_state.pdf_cert, file_name="Certificado_Rentokil.pdf", mime="application/pdf", use_container_width=True)
 
-if st.session_state.app_mode == "DIALOGO" and st.session_state.pdf_dialogo is not None:
-    st.success("✅ Informe de Diálogo Generado Exitosamente")
-    st.download_button("📸 DESCARGAR INFORME DE DIÁLOGO", data=st.session_state.pdf_dialogo, file_name="Dialogo_Rentokil.pdf", mime="application/pdf", use_container_width=True)
+if st.session_state.app_mode == "TRABAJO" and st.session_state.pdf_dialogo is not None:
+    st.success("✅ Informe de Trabajo Generado Exitosamente")
+    st.download_button("📸 DESCARGAR INFORME DE TRABAJO", data=st.session_state.pdf_dialogo, file_name="Informe_Trabajo_Rentokil.pdf", mime="application/pdf", use_container_width=True)
 
 if st.session_state.app_mode == "VISITA" and st.session_state.pdf_visita is not None:
     st.success("✅ Informe de Visita Técnica Generado Exitosamente")
