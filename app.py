@@ -155,7 +155,6 @@ DATABASE_ESTRUCTURAS_EXTRA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
 
 # --- BASE COMBINADA PARA MÓDULOS GLOBALES ---
 DATABASE_COMBINADA = {**DATABASE_MOLINOS, **DATABASE_ESTRUCTURAS_EXTRA}
-# Evitar duplicados de "OTRO"
 if "OTRO" in DATABASE_COMBINADA:
     del DATABASE_COMBINADA["OTRO"]
 DATABASE_COMBINADA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
@@ -413,7 +412,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN 
+# LÓGICA: AVISO DE FUMIGACIÓN (V16.7 - Control manual de hora)
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     with st.sidebar:
@@ -429,7 +428,6 @@ elif st.session_state.app_mode == "AVISO":
         st.markdown("Asegúrate de haber subido el archivo **`plantilla_aviso.docx`** a tu GitHub con las etiquetas correspondientes.")
         
         st.subheader("📝 I. Datos de Emisión y Cliente")
-        # Usar la base de datos combinada
         op_a = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()))
         db_a = DATABASE_COMBINADA
         
@@ -445,7 +443,8 @@ elif st.session_state.app_mode == "AVISO":
         with col_a3:
             fecha_emision_a = st.date_input("Fecha de emisión del documento", datetime.date.today())
             fecha_visita_a = st.date_input("Fecha de Visita Previa", datetime.date.today() - datetime.timedelta(days=1))
-            st.info("La *Hora de Emisión* se tomará automáticamente del sistema.")
+            # CAMBIO V16.7: Control manual de la hora de emisión
+            hora_emision_a = st.time_input("Hora de Emisión (Ajustar si es necesario)", datetime.datetime.now().time())
 
         st.subheader("👨‍💼 II. Datos del Representante (Rentokil)")
         col_r1, col_r2, col_r3 = st.columns(3)
@@ -481,7 +480,6 @@ elif st.session_state.app_mode == "AVISO":
         with col_f6:
             quimico_a = st.selectbox("Químico (Fumigante)", ["Fosfina (Fosfuro de Aluminio)", "Fosfuro de Magnesio", "Ambos (Fosfuro de Aluminio y Magnesio)"])
         with col_f7:
-            # LÓGICA CONDICIONAL DE LA PLAGA
             if tipo_fum_a == "Curativa":
                 plaga_a = st.text_input("Plaga Detectada", "Tribolium confusum")
             else:
@@ -489,7 +487,6 @@ elif st.session_state.app_mode == "AVISO":
                 st.text_input("Plaga Detectada", "N/A (Tratamiento Preventivo)", disabled=True)
 
         st.subheader("🛠️ IV. Modalidad de Tratamiento")
-        # Cambio: "Lote bajo carpa" en vez de "Lote bajo carpa (cámara de fumigación)"
         modalidad_a = st.selectbox("Seleccione la modalidad para marcar en el documento", 
                                    ["Lote bajo carpa", "Silos", "Estructuras", "Contenedores", "Otros"])
         
@@ -517,7 +514,7 @@ elif st.session_state.app_mode == "AVISO":
                     context = {
                         'fecha_emision': format_fecha_es(fecha_emision_a),
                         'fecha_visita': format_fecha_es(fecha_visita_a),
-                        'hora_emision': datetime.datetime.now().strftime("%H:%M"),
+                        'hora_emision': hora_emision_a.strftime("%H:%M"), # CAMBIO: Hora manual
                         'cliente': cliente_a,
                         'rut_cliente': rut_cliente_a,
                         'tel_cliente': tel_cliente_a,
@@ -541,7 +538,6 @@ elif st.session_state.app_mode == "AVISO":
                         'quimico': quimico_a,
                         'plaga': plaga_a,
                         
-                        # Correspondencia exacta con el selectbox
                         'check_carpa': check_on if modalidad_a == "Lote bajo carpa" else check_off,
                         'check_silo': check_on if modalidad_a == "Silos" else check_off,
                         'check_estructura': check_on if modalidad_a == "Estructuras" else check_off,
@@ -556,13 +552,11 @@ elif st.session_state.app_mode == "AVISO":
                     if mapa_file:
                         mapa_path, _, _ = procesar_imagen_full(mapa_file)
                         if mapa_path:
-                            # Ajuste de tamaño para evitar salto de página
-                            context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(130))
+                            context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(135))
                             
                     if firma_aviso:
                         firma_path = procesar_firma(firma_aviso)
                         if firma_path:
-                            # Firma ligeramente más pequeña para asegurar que quede en la misma página
                             context['firma_img'] = InlineImage(doc, firma_path, width=Mm(35))
 
                     doc.render(context)
@@ -606,7 +600,6 @@ elif st.session_state.app_mode == "VISITA":
     foto_portada = st.file_uploader("Sube aquí la Foto General de la Instalación", type=['png','jpg','jpeg','heic'], key="f_portada")
 
     st.subheader("📝 II. Datos Generales")
-    # Base de datos combinada
     op_v = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()))
     db_v = DATABASE_COMBINADA
     
@@ -948,9 +941,9 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
     st.title("🏗️ Informe y Certificado Estructuras")
     st.subheader("I. Datos Generales")
-    # Base de datos combinada
-    op_e = st.selectbox("Cliente", list(DATABASE_COMBINADA.keys()))
-    db_ref = DATABASE_COMBINADA
+    LIST_CL = list(DATABASE_MOLINOS.keys()) + list(DATABASE_ESTRUCTURAS_EXTRA.keys())
+    op_e = st.selectbox("Cliente", LIST_CL)
+    db_ref = DATABASE_MOLINOS if op_e in DATABASE_MOLINOS else DATABASE_ESTRUCTURAS_EXTRA
     
     col_e1, col_e2, col_e3 = st.columns(3)
     with col_e1:
