@@ -78,6 +78,10 @@ if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 if "word_aviso" not in st.session_state: st.session_state.word_aviso = None
 
+# Fijar la hora por defecto una sola vez para que no salte al cambiar de menú
+if "hora_emision_default" not in st.session_state:
+    st.session_state.hora_emision_default = datetime.datetime.now().time()
+
 # Tablas Molinos 
 if "df_d_mol" not in st.session_state:
     st.session_state.df_d_mol = pd.DataFrame([
@@ -102,7 +106,7 @@ if "df_m_est" not in st.session_state:
     cols_est = ["Fecha", "Hora"] + [f"P{i+1}" for i in range(10)]
     st.session_state.df_m_est = pd.DataFrame(d_me, columns=cols_est)
 
-# --- BASES DE DATOS SEPARADAS ---
+# --- BASES DE DATOS DE CLIENTES ---
 DATABASE_MOLINOS = {
     "MOLINO CASABLANCA": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Alejandro Galaz N° 500, Casablanca", "volumen": 4850},
     "MOLINO LA ESTAMPA": {"cliente": "MOLINO LA ESTAMPA S.A.", "rut": "90.828.000-8", "direccion": "Fermin Vivaceta 1053, Independencia", "volumen": 5500},
@@ -159,7 +163,20 @@ if "OTRO" in DATABASE_COMBINADA:
     del DATABASE_COMBINADA["OTRO"]
 DATABASE_COMBINADA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
 
-LISTA_REPRESENTANTES = ["Nicholas Palma", "Vicente Madariaga", "Sebastián Carrillo", "Stefano Pernigotti", "Herbert Diaz", "Juan Callofa", "Maximiliano Caro", "Pavel Sotomayor", "OTRO"]
+# --- NUEVA BASE DE DATOS DE REPRESENTANTES ---
+DATABASE_REPRESENTANTES = {
+    "Nicholas Palma": {"rut": "17.227.760-8", "correo": "nicholas.palma@rentokil-initial.com"},
+    "Vicente Madariaga": {"rut": "15.725.282-8", "correo": "vicente.madariaga@rentokil-initial.com"},
+    "Sebastián Carrillo": {"rut": "19.514.568-7", "correo": "sebastian.carrillo@rentokil-initial.com"},
+    "Stefano Pernigotti": {"rut": "18.085.548-3", "correo": "stefano.pernigotti@rentokil-initial.com"},
+    "Herbert Diaz": {"rut": "8.622.83-1", "correo": "herbert.diaz@rentokil-initial.com"},
+    "Juan Callofa": {"rut": "15.531.428-1", "correo": "juan.callofa@rentokil-initial.com"},
+    "Maximiliano Caro": {"rut": "20.120.770-3", "correo": "maximiliano.caro@rentokil-initial.com"},
+    "Pavel Sotomayor": {"rut": "15.331.334-2", "correo": "pavel.sotomayor@rentokil-initial.com"},
+    "Carlos Narbona": {"rut": "20.121.067-4", "correo": "carlos.narbona@rentokil-initial.com"},
+    "OTRO": {"rut": "", "correo": ""}
+}
+LISTA_REPRESENTANTES = list(DATABASE_REPRESENTANTES.keys())
 
 # --- FUNCIONES UTILITARIAS ---
 def format_fecha_es(fecha):
@@ -412,7 +429,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN (V16.7 - Control manual de hora)
+# LÓGICA: AVISO DE FUMIGACIÓN (V16.8 - DB REPRESENTANTES + FIX HORA)
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     with st.sidebar:
@@ -443,8 +460,11 @@ elif st.session_state.app_mode == "AVISO":
         with col_a3:
             fecha_emision_a = st.date_input("Fecha de emisión del documento", datetime.date.today())
             fecha_visita_a = st.date_input("Fecha de Visita Previa", datetime.date.today() - datetime.timedelta(days=1))
-            # CAMBIO V16.7: Control manual de la hora de emisión
-            hora_emision_a = st.time_input("Hora de Emisión (Ajustar si es necesario)", datetime.datetime.now().time())
+            
+            # --- FIX HORA DE EMISIÓN ---
+            # Usa el session_state para no "saltar" y sobreescribir lo que modifiques
+            hora_emision_a = st.time_input("Hora de Emisión (Ajustar si es necesario)", st.session_state.hora_emision_default)
+            st.session_state.hora_emision_default = hora_emision_a # Guarda tu ajuste para la próxima recarga
 
         st.subheader("👨‍💼 II. Datos del Representante (Rentokil)")
         col_r1, col_r2, col_r3 = st.columns(3)
@@ -452,12 +472,17 @@ elif st.session_state.app_mode == "AVISO":
             rep_a_sel = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES, key="rep_sel_a")
             if rep_a_sel == "OTRO":
                 repre_a = st.text_input("Nombre Representante Manual:", key="rep_man_a")
+                rut_repre_default = ""
+                correo_repre_default = ""
             else:
                 repre_a = rep_a_sel
+                rut_repre_default = DATABASE_REPRESENTANTES[rep_a_sel]["rut"]
+                correo_repre_default = DATABASE_REPRESENTANTES[rep_a_sel]["correo"]
+                
         with col_r2:
-            rut_repre_a = st.text_input("RUT Representante", "")
+            rut_repre_a = st.text_input("RUT Representante", rut_repre_default)
         with col_r3:
-            correo_repre_a = st.text_input("Correo Representante", "")
+            correo_repre_a = st.text_input("Correo Representante", correo_repre_default)
 
         st.subheader("☣️ III. Detalles Técnicos de la Fumigación")
         col_f1, col_f2, col_f3, col_f4 = st.columns(4)
@@ -514,7 +539,7 @@ elif st.session_state.app_mode == "AVISO":
                     context = {
                         'fecha_emision': format_fecha_es(fecha_emision_a),
                         'fecha_visita': format_fecha_es(fecha_visita_a),
-                        'hora_emision': hora_emision_a.strftime("%H:%M"), # CAMBIO: Hora manual
+                        'hora_emision': hora_emision_a.strftime("%H:%M"),
                         'cliente': cliente_a,
                         'rut_cliente': rut_cliente_a,
                         'tel_cliente': tel_cliente_a,
@@ -1156,7 +1181,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         except Exception as e: st.error(f"Error al generar documentos: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA: INFORME DE TRABAJO (ANTES DIÁLOGO)
+# LÓGICA: INFORME DE TRABAJO
 # ==============================================================================
 elif st.session_state.app_mode == "TRABAJO":
     with st.sidebar:
@@ -1167,7 +1192,6 @@ elif st.session_state.app_mode == "TRABAJO":
     st.title("📸 Informe de Trabajo (Pantalla Completa)")
     st.markdown("Este módulo genera un PDF oficial. La primera imagen acompaña la portada, las demás ocupan la hoja completa.")
     
-    # Base de datos combinada
     op_d = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()))
     db_ref = DATABASE_COMBINADA
     
