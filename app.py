@@ -429,7 +429,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN (V16.9 - FIX ETIQUETA VISITA_PREVIA Y PLAGA)
+# LÓGICA: AVISO DE FUMIGACIÓN 
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     with st.sidebar:
@@ -533,7 +533,6 @@ elif st.session_state.app_mode == "AVISO":
                     check_on = "☒"
                     check_off = "☐"
                     
-                    # CAMBIO v16.9: 'visita_previa' sincronizado con la nueva etiqueta del Word
                     context = {
                         'fecha_emision': format_fecha_es(fecha_emision_a),
                         'visita_previa': format_fecha_es(fecha_visita_a),
@@ -1190,17 +1189,18 @@ elif st.session_state.app_mode == "TRABAJO":
     st.title("📸 Informe de Trabajo (Pantalla Completa)")
     st.markdown("Este módulo genera un PDF oficial. La primera imagen acompaña la portada, las demás ocupan la hoja completa.")
     
-    # Base de datos combinada
     op_d = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()))
     db_ref = DATABASE_COMBINADA
     
-    col_d1, col_d2 = st.columns(2)
+    col_d1, col_d2, col_d3 = st.columns(3)
     with col_d1:
         cli_d = st.text_input("Razón Social", db_ref[op_d].get("cliente", op_d))
-        pla_d = st.text_input("Planta o Instalación", op_d)
     with col_d2:
         dir_d = st.text_input("Dirección", db_ref[op_d].get("direccion", ""))
+    with col_d3:
         fec_d = st.date_input("Fecha", datetime.date.today())
+        
+    detalles_d = st.text_area("Detalle de Labores / Observaciones (Máx. 5 líneas recomendadas)", height=100)
         
     fotos_dialogo = st.file_uploader("Sube TODAS las fotos aquí (Soporta 50+ imágenes)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'])
     
@@ -1214,8 +1214,23 @@ elif st.session_state.app_mode == "TRABAJO":
                 pdf.cell(0, 8, "REGISTRO FOTOGRÁFICO DE TRABAJO", ln=1, align="C")
                 pdf.set_text_color(0, 0, 0); pdf.ln(5)
                 
-                pdf.tabla_moderna(["CLIENTE / RAZÓN SOCIAL", "PLANTA", "FECHA"], [[str(cli_d), str(pla_d), format_fecha_es(fec_d)]], [80, 70, 40], color=COLOR_PRIMARIO)
-                pdf.tabla_moderna(["DIRECCIÓN"], [[str(dir_d)]], [190], color=COLOR_PRIMARIO)
+                pdf.tabla_moderna(["CLIENTE / RAZÓN SOCIAL", "DIRECCIÓN", "FECHA"], [[str(cli_d), str(dir_d), format_fecha_es(fec_d)]], [80, 70, 40], color=COLOR_PRIMARIO)
+                
+                # --- NUEVO CUADRO DETALLE DE LABORES ---
+                pdf.set_font("Arial", "B", 9)
+                pdf.set_fill_color(*COLOR_PRIMARIO)
+                pdf.set_text_color(255, 255, 255)
+                x_start = pdf.get_x()
+                y_start = pdf.get_y()
+                pdf.rounded_rect(x_start, y_start, 190, 7, 2, 'F')
+                pdf.cell(190, 7, "DETALLE DE LABORES / OBSERVACIONES", border=0, align='C', fill=False)
+                pdf.ln()
+                pdf.set_font("Arial", "", 9)
+                pdf.set_text_color(0, 0, 0)
+                texto_detalles = str(detalles_d).strip() if str(detalles_d).strip() else "Sin observaciones registradas."
+                pdf.multi_cell(190, 5, texto_detalles, border='B', align='L')
+                pdf.ln(5)
+                # ----------------------------------------
                 
                 progress_text = "Procesando imágenes. Por favor espera..."
                 my_bar = st.progress(0, text=progress_text)
@@ -1225,9 +1240,11 @@ elif st.session_state.app_mode == "TRABAJO":
                     if tmp_p:
                         ratio = w / h
                         if i == 0:
+                            # Se reduce la primera foto para asegurar que quepan los detalles
                             avail_h = 260 - pdf.get_y()
-                            if (190 / ratio) <= avail_h:
-                                final_w = 190; final_h = 190 / ratio
+                            max_w_cover = 150 # Foto más pequeña
+                            if (max_w_cover / ratio) <= avail_h:
+                                final_w = max_w_cover; final_h = max_w_cover / ratio
                             else:
                                 final_h = avail_h; final_w = avail_h * ratio
                             pdf_x = 10 + (190 - final_w) / 2
