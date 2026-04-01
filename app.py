@@ -429,7 +429,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN (V16.8 - DB REPRESENTANTES + FIX HORA)
+# LÓGICA: AVISO DE FUMIGACIÓN (V16.9 - FIX ETIQUETA VISITA_PREVIA Y PLAGA)
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     with st.sidebar:
@@ -460,11 +460,8 @@ elif st.session_state.app_mode == "AVISO":
         with col_a3:
             fecha_emision_a = st.date_input("Fecha de emisión del documento", datetime.date.today())
             fecha_visita_a = st.date_input("Fecha de Visita Previa", datetime.date.today() - datetime.timedelta(days=1))
-            
-            # --- FIX HORA DE EMISIÓN ---
-            # Usa el session_state para no "saltar" y sobreescribir lo que modifiques
             hora_emision_a = st.time_input("Hora de Emisión (Ajustar si es necesario)", st.session_state.hora_emision_default)
-            st.session_state.hora_emision_default = hora_emision_a # Guarda tu ajuste para la próxima recarga
+            st.session_state.hora_emision_default = hora_emision_a
 
         st.subheader("👨‍💼 II. Datos del Representante (Rentokil)")
         col_r1, col_r2, col_r3 = st.columns(3)
@@ -536,9 +533,10 @@ elif st.session_state.app_mode == "AVISO":
                     check_on = "☒"
                     check_off = "☐"
                     
+                    # CAMBIO v16.9: 'visita_previa' sincronizado con la nueva etiqueta del Word
                     context = {
                         'fecha_emision': format_fecha_es(fecha_emision_a),
-                        'fecha_visita': format_fecha_es(fecha_visita_a),
+                        'visita_previa': format_fecha_es(fecha_visita_a),
                         'hora_emision': hora_emision_a.strftime("%H:%M"),
                         'cliente': cliente_a,
                         'rut_cliente': rut_cliente_a,
@@ -1192,6 +1190,7 @@ elif st.session_state.app_mode == "TRABAJO":
     st.title("📸 Informe de Trabajo (Pantalla Completa)")
     st.markdown("Este módulo genera un PDF oficial. La primera imagen acompaña la portada, las demás ocupan la hoja completa.")
     
+    # Base de datos combinada
     op_d = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()))
     db_ref = DATABASE_COMBINADA
     
