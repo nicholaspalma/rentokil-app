@@ -29,13 +29,6 @@ try:
 except ImportError:
     pass
 
-# --- SOPORTE PDF A WORD ---
-try:
-    from pdf2docx import Converter
-    PDF2DOCX_INSTALLED = True
-except ImportError:
-    PDF2DOCX_INSTALLED = False
-
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(layout="wide", page_title="Rentokil Mobile PRO")
 COLOR_PRIMARIO = (227, 6, 19)
@@ -77,8 +70,8 @@ if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 if "word_aviso" not in st.session_state: st.session_state.word_aviso = None
+if "word_investigacion" not in st.session_state: st.session_state.word_investigacion = None
 
-# Fijar la hora por defecto una sola vez para que no salte al cambiar de menú
 if "hora_emision_default" not in st.session_state:
     st.session_state.hora_emision_default = datetime.datetime.now().time()
 
@@ -163,7 +156,7 @@ if "OTRO" in DATABASE_COMBINADA:
     del DATABASE_COMBINADA["OTRO"]
 DATABASE_COMBINADA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
 
-# --- NUEVA BASE DE DATOS DE REPRESENTANTES ---
+# --- BASE DE DATOS DE REPRESENTANTES ---
 DATABASE_REPRESENTANTES = {
     "Nicholas Palma": {"rut": "17.227.760-8", "correo": "nicholas.palma@rentokil-initial.com"},
     "Vicente Madariaga": {"rut": "15.725.282-8", "correo": "vicente.madariaga@rentokil-initial.com"},
@@ -177,6 +170,22 @@ DATABASE_REPRESENTANTES = {
     "OTRO": {"rut": "", "correo": ""}
 }
 LISTA_REPRESENTANTES = list(DATABASE_REPRESENTANTES.keys())
+
+# --- BASE DE DATOS DE KPI (Desviaciones e Incidentes) ---
+DATABASE_KPI = {
+    "Ninguna / No Aplica": {"gravedad": "N/A", "puntaje": 0},
+    "No uso de EPP básico (Falta Leve)": {"gravedad": "Leve", "puntaje": -10},
+    "No uso de EPP específico (Falta Grave)": {"gravedad": "Grave", "puntaje": -30},
+    "Derrame menor de producto químico (Falta Media)": {"gravedad": "Media", "puntaje": -15},
+    "Derrame mayor de producto químico (Falta Crítica)": {"gravedad": "Crítica", "puntaje": -50},
+    "Incumplimiento de Protocolo de Sellado (Falta Media)": {"gravedad": "Media", "puntaje": -15},
+    "Falta de Señalización de Peligro (Falta Grave)": {"gravedad": "Grave", "puntaje": -30},
+    "Pérdida de hermeticidad por daño en carpa (Falta Media)": {"gravedad": "Media", "puntaje": -15},
+    "Accidente con Lesión Personal Leve (Falta Grave)": {"gravedad": "Grave", "puntaje": -50},
+    "Accidente con Lesión Personal Grave (Falta Crítica)": {"gravedad": "Crítica", "puntaje": -100},
+    "OTRO (Ingresar manualmente)": {"gravedad": "Variable", "puntaje": 0}
+}
+LISTA_KPI = list(DATABASE_KPI.keys())
 
 # --- FUNCIONES UTILITARIAS ---
 def format_fecha_es(fecha):
@@ -405,7 +414,7 @@ if st.session_state.app_mode == "HOME":
     
     st.markdown("---")
     
-    c1, c2, c3, c_new = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     with c1:
         if st.button("🏭 MOLINOS\n(Técnico y Cert.)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "MOLINOS"; st.rerun()
@@ -415,21 +424,181 @@ if st.session_state.app_mode == "HOME":
     with c3:
         if st.button("📋 VISITA TÉCNICA\n(Evaluación Previa)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "VISITA"; st.rerun()
-    with c_new:
-        if st.button("📢 NOTIFICACIÓN\n(Aviso al Seremi)", use_container_width=True, type="primary"):
-            st.session_state.app_mode = "AVISO"; st.rerun()
             
     st.write("")
     c4, c5 = st.columns(2)
     with c4:
-        if st.button("📸 INFORME DE TRABAJO\n(Fotos a Pantalla Completa)", use_container_width=True, type="secondary"):
-            st.session_state.app_mode = "TRABAJO"; st.rerun()
+        if st.button("📢 NOTIFICACIÓN\n(Aviso al Seremi)", use_container_width=True, type="secondary"):
+            st.session_state.app_mode = "AVISO"; st.rerun()
     with c5:
-        if st.button("📄 CONVERTIR PDF A WORD\n(Transforma archivos)", use_container_width=True, type="secondary"):
-            st.session_state.app_mode = "PDF2WORD"; st.rerun()
+        if st.button("📸 INFORME DE TRABAJO\n(Reporte Visual)", use_container_width=True, type="secondary"):
+            st.session_state.app_mode = "TRABAJO"; st.rerun()
+            
+    st.write("")
+    c_inv1, c_inv2, c_inv3 = st.columns([1,2,1])
+    with c_inv2:
+        if st.button("⚠️ INVESTIGACIÓN\n(Reporte de Incidentes)", use_container_width=True, type="primary"):
+            st.session_state.app_mode = "INVESTIGACION"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN 
+# LÓGICA: INVESTIGACIÓN DE INCIDENTES (NUEVO)
+# ==============================================================================
+elif st.session_state.app_mode == "INVESTIGACION":
+    with st.sidebar:
+        if os.path.exists("logo.png"): st.image("logo.png", width=120)
+        if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
+        st.info("Modo: Investigación de Incidentes (Plantilla Word)")
+
+    st.title("⚠️ Informe de Investigación de Incidentes")
+    
+    if not DOCXTPL_INSTALLED:
+        st.error("⚠️ Para usar este módulo, la librería `docxtpl` debe estar instalada.")
+    else:
+        st.markdown("Asegúrate de haber subido el archivo **`plantilla_investigacion.docx`** a tu GitHub con las etiquetas correspondientes.")
+        
+        st.subheader("📋 I. Datos Generales del Incidente")
+        op_inv = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()), key="cliente_inv")
+        db_inv = DATABASE_COMBINADA
+        
+        col_i1, col_i2, col_i3 = st.columns(3)
+        with col_i1:
+            cliente_inv = st.text_input("Razón Social", db_inv[op_inv].get("cliente", op_inv))
+            planta_inv = st.text_input("Planta / Instalación", op_inv)
+        with col_i2:
+            area_inv = st.text_input("Área exacta del incidente", "Ej: Bodega principal")
+            fecha_inv = st.date_input("Fecha del Incidente", datetime.date.today())
+        with col_i3:
+            hora_inv = st.time_input("Hora del Incidente", datetime.datetime.now().time())
+
+        st.subheader("👤 II. Personal Involucrado")
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            nombre_inv = st.text_input("Nombre del Involucrado", "")
+        with col_p2:
+            cargo_inv = st.text_input("Cargo", "")
+
+        st.subheader("📝 III. Descripción de los Hechos")
+        desc_inv = st.text_area("Relate de manera objetiva cómo ocurrió el incidente:", height=120)
+
+        st.subheader("📊 IV. Clasificación y Puntaje KPI")
+        st.markdown("Seleccione la desviación detectada. El sistema calculará automáticamente la gravedad y el puntaje a descontar.")
+        falta_seleccionada = st.selectbox("Seleccione la Falta o Desviación", LISTA_KPI)
+        
+        if falta_seleccionada == "OTRO (Ingresar manualmente)":
+            falta_texto = st.text_input("Describa la desviación:")
+            gravedad_kpi = st.selectbox("Nivel de Gravedad", ["Leve", "Media", "Grave", "Crítica"])
+            puntaje_kpi = st.number_input("Puntaje a descontar (Ej: -10)", value=0, step=1)
+        else:
+            falta_texto = falta_seleccionada.split(" (")[0]
+            gravedad_kpi = DATABASE_KPI[falta_seleccionada]["gravedad"]
+            puntaje_kpi = DATABASE_KPI[falta_seleccionada]["puntaje"]
+            st.info(f"**Gravedad:** {gravedad_kpi} | **Impacto en KPI:** {puntaje_kpi} puntos")
+
+        st.subheader("🔍 V. Análisis de Causas")
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            causa_inmediata = st.text_area("Causas Inmediatas (Acciones/Condiciones Subestándares)", height=100)
+        with col_c2:
+            causa_raiz = st.text_area("Causas Raíz (Factores Personales/Trabajo)", height=100)
+
+        st.subheader("✅ VI. Plan de Acción (Medidas Correctivas)")
+        col_pa1, col_pa2, col_pa3 = st.columns(3)
+        with col_pa1:
+            accion_inv = st.text_area("Acción Correctiva", height=68)
+        with col_pa2:
+            responsable_inv = st.text_input("Responsable de ejecución")
+        with col_pa3:
+            fecha_accion_inv = st.date_input("Fecha de Cumplimiento", datetime.date.today() + datetime.timedelta(days=7))
+
+        st.subheader("📸 VII. Evidencia y Firmas")
+        fotos_incidentes = st.file_uploader("Sube hasta 3 fotos del incidente", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="fotos_inv")
+        firma_inv = st.file_uploader("Firma del Investigador / Supervisor", type=["png", "jpg", "jpeg", "heic"], key="firma_inv")
+
+        if st.button("🚀 GENERAR INFORME DE INVESTIGACIÓN", use_container_width=True, type="primary"):
+            if not os.path.exists("plantilla_investigacion.docx"):
+                st.error("❌ No se encontró el archivo `plantilla_investigacion.docx`. Por favor, súbelo a GitHub.")
+            else:
+                try:
+                    doc = DocxTemplate("plantilla_investigacion.docx")
+                    
+                    context = {
+                        'cliente': cliente_inv,
+                        'planta': planta_inv,
+                        'area': area_inv,
+                        'fecha_inc': format_fecha_es(fecha_inv),
+                        'hora_inc': hora_inv.strftime("%H:%M"),
+                        'nombre_inv': nombre_inv,
+                        'cargo_inv': cargo_inv,
+                        'descripcion': desc_inv,
+                        'falta_kpi': falta_texto,
+                        'puntaje_kpi': str(puntaje_kpi),
+                        'gravedad_kpi': gravedad_kpi,
+                        'causa_inmediata': causa_inmediata,
+                        'causa_raiz': causa_raiz,
+                        'accion': accion_inv,
+                        'responsable': responsable_inv,
+                        'fecha_accion': format_fecha_es(fecha_accion_inv)
+                    }
+
+                    # Procesar imágenes (Hasta 3 fotos)
+                    rutas_fotos_temp = []
+                    if fotos_incidentes:
+                        for i in range(3):
+                            if i < len(fotos_incidentes):
+                                img_path = procesar_imagen(fotos_incidentes[i])
+                                if img_path:
+                                    context[f'foto_{i+1}'] = InlineImage(doc, img_path, width=Mm(60))
+                                    rutas_fotos_temp.append(img_path)
+                                else:
+                                    context[f'foto_{i+1}'] = ""
+                            else:
+                                context[f'foto_{i+1}'] = ""
+                    else:
+                        context['foto_1'] = ""
+                        context['foto_2'] = ""
+                        context['foto_3'] = ""
+                            
+                    # Procesar Firma
+                    firma_path = None
+                    if firma_inv:
+                        firma_path = procesar_firma(firma_inv)
+                        if firma_path:
+                            context['firma_img'] = InlineImage(doc, firma_path, width=Mm(40))
+                        else:
+                            context['firma_img'] = ""
+                    else:
+                        context['firma_img'] = ""
+
+                    doc.render(context)
+                    
+                    tmp_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    doc.save(tmp_docx.name)
+                    
+                    with open(tmp_docx.name, "rb") as f:
+                        st.session_state.word_investigacion = f.read()
+                        
+                    # Limpieza temporal
+                    for path in rutas_fotos_temp:
+                        if os.path.exists(path): os.remove(path)
+                    if firma_path and os.path.exists(firma_path): os.remove(firma_path)
+                    
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error generando la investigación: {e}")
+                    st.code(traceback.format_exc())
+
+    if st.session_state.get("word_investigacion") is not None:
+        st.success("✅ Informe de Investigación Generado Exitosamente")
+        st.download_button(
+            label="📄 DESCARGAR INVESTIGACIÓN EN WORD",
+            data=st.session_state.word_investigacion,
+            file_name="Investigacion_Incidentes_Rentokil.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True
+        )
+
+# ==============================================================================
+# LÓGICA: AVISO DE FUMIGACIÓN (V16.9)
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     with st.sidebar:
@@ -1216,7 +1385,6 @@ elif st.session_state.app_mode == "TRABAJO":
                 
                 pdf.tabla_moderna(["CLIENTE / RAZÓN SOCIAL", "DIRECCIÓN", "FECHA"], [[str(cli_d), str(dir_d), format_fecha_es(fec_d)]], [80, 70, 40], color=COLOR_PRIMARIO)
                 
-                # --- NUEVO CUADRO DETALLE DE LABORES ---
                 pdf.set_font("Arial", "B", 9)
                 pdf.set_fill_color(*COLOR_PRIMARIO)
                 pdf.set_text_color(255, 255, 255)
@@ -1230,7 +1398,6 @@ elif st.session_state.app_mode == "TRABAJO":
                 texto_detalles = str(detalles_d).strip() if str(detalles_d).strip() else "Sin observaciones registradas."
                 pdf.multi_cell(190, 5, texto_detalles, border='B', align='L')
                 pdf.ln(5)
-                # ----------------------------------------
                 
                 progress_text = "Procesando imágenes. Por favor espera..."
                 my_bar = st.progress(0, text=progress_text)
@@ -1240,9 +1407,8 @@ elif st.session_state.app_mode == "TRABAJO":
                     if tmp_p:
                         ratio = w / h
                         if i == 0:
-                            # Se reduce la primera foto para asegurar que quepan los detalles
                             avail_h = 260 - pdf.get_y()
-                            max_w_cover = 150 # Foto más pequeña
+                            max_w_cover = 150 
                             if (max_w_cover / ratio) <= avail_h:
                                 final_w = max_w_cover; final_h = max_w_cover / ratio
                             else:
@@ -1269,47 +1435,6 @@ elif st.session_state.app_mode == "TRABAJO":
             except Exception as e: st.error(f"Error generando Informe de Trabajo: {e}"); st.code(traceback.format_exc())
         else:
             st.warning("Debes subir al menos una foto para generar el informe de trabajo.")
-
-# ==============================================================================
-# LÓGICA: PDF A WORD
-# ==============================================================================
-elif st.session_state.app_mode == "PDF2WORD":
-    with st.sidebar:
-        if os.path.exists("logo.png"): st.image("logo.png", width=120)
-        if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
-        st.info("Modo: PDF a Word")
-        
-    st.title("📄 Convertidor Mágico: PDF a Word")
-    
-    if not PDF2DOCX_INSTALLED:
-        st.error("⚠️ Falta una librería en el servidor.")
-    else:
-        st.markdown("Sube cualquier PDF tal cual lo tienes en el celular. El sistema internamente generará una copia idéntica en Word (`.docx`). **No necesitas cambiar ningún nombre, la aplicación lo hace por ti.**")
-        uploaded_pdf = st.file_uploader("Selecciona tu documento", type=['pdf'])
-        
-        if uploaded_pdf and st.button("🔄 CONVERTIR A WORD", use_container_width=True, type="primary"):
-            with st.spinner("Convirtiendo documento... Esto puede tardar unos segundos..."):
-                try:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as t_pdf:
-                        t_pdf.write(uploaded_pdf.read())
-                        pdf_path = t_pdf.name
-                    
-                    docx_path = pdf_path.replace(".pdf", ".docx")
-                    cv = Converter(pdf_path)
-                    cv.convert(docx_path)
-                    cv.close()
-                    
-                    original_name = uploaded_pdf.name.replace(".pdf", "")
-                    with open(docx_path, "rb") as docx_file:
-                        st.download_button(
-                            label="✅ DESCARGAR DOCUMENTO WORD",
-                            data=docx_file.read(),
-                            file_name=f"{original_name}.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            use_container_width=True
-                        )
-                except Exception as e:
-                    st.error(f"Hubo un error durante la conversión. Asegúrate de que el PDF no esté protegido con clave. Detalle: {e}")
 
 # ==============================================================================
 # BOTONES DE DESCARGA GLOBALES
