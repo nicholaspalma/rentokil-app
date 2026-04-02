@@ -70,10 +70,10 @@ if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 if "word_aviso" not in st.session_state: st.session_state.word_aviso = None
-if "word_investigacion" not in st.session_state: st.session_state.word_investigacion = None
+if "pdf_investigacion" not in st.session_state: st.session_state.pdf_investigacion = None
 
-if "hora_emision_default" not in st.session_state:
-    st.session_state.hora_emision_default = datetime.datetime.now().time()
+if "hora_emision_default" not in st.session_state: st.session_state.hora_emision_default = datetime.datetime.now().time()
+if "hora_inv_default" not in st.session_state: st.session_state.hora_inv_default = datetime.datetime.now().time()
 
 # Tablas Molinos 
 if "df_d_mol" not in st.session_state:
@@ -138,54 +138,58 @@ if csv_path:
         for _, row in df_csv.iterrows():
             n_planta = str(row[c_planta]).strip()
             if n_planta and n_planta.lower() != 'nan':
-                new_client = {
-                    "cliente": str(row[c_cliente]).strip() if c_cliente else n_planta,
-                    "rut": str(row[c_rut]).strip() if c_rut else "",
-                    "direccion": str(row[c_dir]).strip() if c_dir else "",
-                    "volumen": 0
-                }
+                new_client = {"cliente": str(row[c_cliente]).strip() if c_cliente else n_planta, "rut": str(row[c_rut]).strip() if c_rut else "", "direccion": str(row[c_dir]).strip() if c_dir else "", "volumen": 0}
                 DATABASE_ESTRUCTURAS_EXTRA[n_planta] = new_client
     except: pass
 
 DATABASE_MOLINOS["OTRO"] = {"cliente": "", "rut": "", "direccion": "", "volumen": 0}
 DATABASE_ESTRUCTURAS_EXTRA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
 
-# --- BASE COMBINADA PARA MÓDULOS GLOBALES ---
 DATABASE_COMBINADA = {**DATABASE_MOLINOS, **DATABASE_ESTRUCTURAS_EXTRA}
-if "OTRO" in DATABASE_COMBINADA:
-    del DATABASE_COMBINADA["OTRO"]
+if "OTRO" in DATABASE_COMBINADA: del DATABASE_COMBINADA["OTRO"]
 DATABASE_COMBINADA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
 
-# --- BASE DE DATOS DE REPRESENTANTES ---
-DATABASE_REPRESENTANTES = {
-    "Nicholas Palma": {"rut": "17.227.760-8", "correo": "nicholas.palma@rentokil-initial.com"},
-    "Vicente Madariaga": {"rut": "15.725.282-8", "correo": "vicente.madariaga@rentokil-initial.com"},
-    "Sebastián Carrillo": {"rut": "19.514.568-7", "correo": "sebastian.carrillo@rentokil-initial.com"},
-    "Stefano Pernigotti": {"rut": "18.085.548-3", "correo": "stefano.pernigotti@rentokil-initial.com"},
-    "Herbert Diaz": {"rut": "8.622.83-1", "correo": "herbert.diaz@rentokil-initial.com"},
-    "Juan Callofa": {"rut": "15.531.428-1", "correo": "juan.callofa@rentokil-initial.com"},
-    "Maximiliano Caro": {"rut": "20.120.770-3", "correo": "maximiliano.caro@rentokil-initial.com"},
-    "Pavel Sotomayor": {"rut": "15.331.334-2", "correo": "pavel.sotomayor@rentokil-initial.com"},
-    "Carlos Narbona": {"rut": "20.121.067-4", "correo": "carlos.narbona@rentokil-initial.com"},
-    "OTRO": {"rut": "", "correo": ""}
+# --- NUEVA BASE DE DATOS DE PERSONAL (INVESTIGACIÓN Y REP) ---
+DATABASE_PERSONAL = {
+    "Marcos Escobar": {"rut": "8.546.549-K", "cargo": "Técnico"},
+    "Carlos Narbona": {"rut": "20.121.067-4", "cargo": "Representante Técnico"},
+    "Cristian Corral": {"rut": "16.630.012-6", "cargo": "Técnico"},
+    "Eduardo Inostroza": {"rut": "18.692.998-5", "cargo": "Técnico"},
+    "Juan Vásquez": {"rut": "15.629.902-2", "cargo": "Técnico"},
+    "Maximiliano Caro": {"rut": "20.120.770-3", "cargo": "Representante Técnico"},
+    "Víctor Becerra": {"rut": "17.759.655-8", "cargo": "Técnico"},
+    "Sebastián Carrillo": {"rut": "19.514.568-7", "cargo": "Representante Técnico"},
+    "Cristian Saavedra": {"rut": "19.703.885-3", "cargo": "Técnico"},
+    "Juan Callofa": {"rut": "15.531.428-1", "cargo": "Representante Técnico"},
+    "Nicholas Palma": {"rut": "17.227.760-8", "cargo": "Representante Técnico"},
+    "Vicente Madariaga": {"rut": "15.725.282-8", "cargo": "Representante Técnico"},
+    "Stefano Pernigotti": {"rut": "18.085.548-3", "cargo": "Representante Técnico"},
+    "Herbert Diaz": {"rut": "8.622.83-1", "cargo": "Representante Técnico"},
+    "Pavel Sotomayor": {"rut": "15.331.334-2", "cargo": "Representante Técnico"},
+    "OTRO": {"rut": "", "cargo": ""}
 }
-LISTA_REPRESENTANTES = list(DATABASE_REPRESENTANTES.keys())
+LISTA_PERSONAL = list(DATABASE_PERSONAL.keys())
 
-# --- BASE DE DATOS DE KPI (Desviaciones e Incidentes) ---
-DATABASE_KPI = {
-    "Ninguna / No Aplica": {"gravedad": "N/A", "puntaje": 0},
-    "No uso de EPP básico (Falta Leve)": {"gravedad": "Leve", "puntaje": -10},
-    "No uso de EPP específico (Falta Grave)": {"gravedad": "Grave", "puntaje": -30},
-    "Derrame menor de producto químico (Falta Media)": {"gravedad": "Media", "puntaje": -15},
-    "Derrame mayor de producto químico (Falta Crítica)": {"gravedad": "Crítica", "puntaje": -50},
-    "Incumplimiento de Protocolo de Sellado (Falta Media)": {"gravedad": "Media", "puntaje": -15},
-    "Falta de Señalización de Peligro (Falta Grave)": {"gravedad": "Grave", "puntaje": -30},
-    "Pérdida de hermeticidad por daño en carpa (Falta Media)": {"gravedad": "Media", "puntaje": -15},
-    "Accidente con Lesión Personal Leve (Falta Grave)": {"gravedad": "Grave", "puntaje": -50},
-    "Accidente con Lesión Personal Grave (Falta Crítica)": {"gravedad": "Crítica", "puntaje": -100},
-    "OTRO (Ingresar manualmente)": {"gravedad": "Variable", "puntaje": 0}
+# --- BASE DE DATOS DE KPI ESTRUCTURADA ---
+DATABASE_KPI_ESTRUCTURADA = {
+    "Seguridad": [
+        {"falta": "No uso de EPP básico", "gravedad": "Leve", "puntaje": -10},
+        {"falta": "No uso de EPP específico (Arnés, Respirador)", "gravedad": "Crítica", "puntaje": -50},
+        {"falta": "Derrame de producto químico", "gravedad": "Grave", "puntaje": -30},
+        {"falta": "Accidente con lesión personal", "gravedad": "Crítica", "puntaje": -100}
+    ],
+    "Calidad": [
+        {"falta": "Incumplimiento de protocolo de sellado", "gravedad": "Media", "puntaje": -15},
+        {"falta": "Falta de señalización de peligro", "gravedad": "Grave", "puntaje": -30},
+        {"falta": "Dosificación incorrecta", "gravedad": "Grave", "puntaje": -30},
+        {"falta": "Pérdida de hermeticidad por daño en carpa", "gravedad": "Media", "puntaje": -15}
+    ],
+    "RIOHS y Contrato": [
+        {"falta": "Llegada tarde a servicio", "gravedad": "Leve", "puntaje": -5},
+        {"falta": "Falta de respeto a cliente", "gravedad": "Grave", "puntaje": -50},
+        {"falta": "Incumplimiento de normativa interna del cliente", "gravedad": "Media", "puntaje": -20}
+    ]
 }
-LISTA_KPI = list(DATABASE_KPI.keys())
 
 # --- FUNCIONES UTILITARIAS ---
 def format_fecha_es(fecha):
@@ -246,7 +250,7 @@ def procesar_firma(uploaded_file):
     except: return None
 
 # ==============================================================================
-# CLASE PDF: INFORME TÉCNICO Y TRABAJO
+# CLASE PDF: REPORTES NATIVOS
 # ==============================================================================
 class InformePDF(FPDF):
     def rounded_rect(self, x, y, w, h, r, style=''):
@@ -267,42 +271,14 @@ class InformePDF(FPDF):
         self.set_font("Arial", "B", 9)
         self.set_fill_color(*color)
         self.set_text_color(255, 255, 255)
-        x_start = self.get_x()
-        y_start = self.get_y()
+        x_start = self.get_x(); y_start = self.get_y()
         self.rounded_rect(x_start, y_start, sum(widths), 7, 2, 'F')
-        for i, h in enumerate(header):
-            self.cell(widths[i], 7, h, border=0, align='C', fill=False)
-        self.ln()
-        self.set_font("Arial", "", 9)
-        self.set_text_color(0, 0, 0)
+        for i, h in enumerate(header): self.cell(widths[i], 7, h, border=0, align='C', fill=False)
+        self.ln(); self.set_font("Arial", "", 9); self.set_text_color(0, 0, 0)
         for row in data:
-            for i, d in enumerate(row):
-                self.cell(widths[i], 8, str(d), border='B', align='C', fill=False)
+            for i, d in enumerate(row): self.cell(widths[i], 8, str(d), border='B', align='C', fill=False)
             self.ln()
         self.ln(3)
-
-    def tabla_visita(self, label, lines):
-        self.set_font("Arial", "B", 9)
-        y_start = self.get_y()
-        h = max(len(lines) * 5 + 4, 8)
-        if y_start + h > 270:
-            self.add_page()
-            y_start = self.get_y()
-
-        self.set_draw_color(200, 200, 200)
-        self.rect(10, y_start, 50, h)
-        self.rect(60, y_start, 140, h)
-
-        self.set_xy(10, y_start + (h/2 - 2))
-        self.cell(50, 4, label, align='C')
-
-        self.set_xy(60, y_start + 2)
-        self.set_font("Arial", "", 9)
-        for line in lines:
-            self.set_x(62)
-            self.cell(136, 5, line, ln=1)
-
-        self.set_y(y_start + h)
 
     def header(self):
         if os.path.exists('logo.png'):
@@ -310,9 +286,12 @@ class InformePDF(FPDF):
             except: pass
         self.set_font("Arial", "B", 14)
         self.set_text_color(*COLOR_PRIMARIO)
+        
+        # Títulos dinámicos según el módulo
         titulo = "INFORME TÉCNICO DE FUMIGACIÓN"
-        if getattr(self, 'is_visita', False):
-            titulo = "VISITA TÉCNICA PRE-FUMIGACIÓN"
+        if getattr(self, 'is_visita', False): titulo = "VISITA TÉCNICA PRE-FUMIGACIÓN"
+        if getattr(self, 'is_investigacion', False): titulo = "INVESTIGACIÓN DE INCIDENTES"
+            
         self.cell(0, 8, titulo, ln=1, align="R")
         self.set_font("Arial", "I", 8)
         self.set_text_color(100, 100, 100)
@@ -426,179 +405,174 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "VISITA"; st.rerun()
             
     st.write("")
-    c4, c5 = st.columns(2)
+    c4, c5, c6 = st.columns(3)
     with c4:
         if st.button("📢 NOTIFICACIÓN\n(Aviso al Seremi)", use_container_width=True, type="secondary"):
             st.session_state.app_mode = "AVISO"; st.rerun()
     with c5:
         if st.button("📸 INFORME DE TRABAJO\n(Reporte Visual)", use_container_width=True, type="secondary"):
             st.session_state.app_mode = "TRABAJO"; st.rerun()
-            
-    st.write("")
-    c_inv1, c_inv2, c_inv3 = st.columns([1,2,1])
-    with c_inv2:
+    with c6:
         if st.button("⚠️ INVESTIGACIÓN\n(Reporte de Incidentes)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "INVESTIGACION"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: INVESTIGACIÓN DE INCIDENTES (NUEVO)
+# LÓGICA: INVESTIGACIÓN DE INCIDENTES (100% NATIVA EN PDF)
 # ==============================================================================
 elif st.session_state.app_mode == "INVESTIGACION":
     with st.sidebar:
         if os.path.exists("logo.png"): st.image("logo.png", width=120)
         if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
-        st.info("Modo: Investigación de Incidentes (Plantilla Word)")
+        st.info("Modo: Investigación de Incidentes (Generación de PDF Nativo)")
 
-    st.title("⚠️ Informe de Investigación de Incidentes")
+    st.title("⚠️ Informe Técnico de Investigación de Incidentes")
     
-    if not DOCXTPL_INSTALLED:
-        st.error("⚠️ Para usar este módulo, la librería `docxtpl` debe estar instalada.")
-    else:
-        st.markdown("Asegúrate de haber subido el archivo **`plantilla_investigacion.docx`** a tu GitHub con las etiquetas correspondientes.")
-        
-        st.subheader("📋 I. Datos Generales del Incidente")
-        op_inv = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()), key="cliente_inv")
-        db_inv = DATABASE_COMBINADA
-        
-        col_i1, col_i2, col_i3 = st.columns(3)
-        with col_i1:
-            cliente_inv = st.text_input("Razón Social", db_inv[op_inv].get("cliente", op_inv))
-            planta_inv = st.text_input("Planta / Instalación", op_inv)
-        with col_i2:
-            area_inv = st.text_input("Área exacta del incidente", "Ej: Bodega principal")
-            fecha_inv = st.date_input("Fecha del Incidente", datetime.date.today())
-        with col_i3:
-            hora_inv = st.time_input("Hora del Incidente", datetime.datetime.now().time())
+    st.subheader("📋 I. Datos Generales del Incidente")
+    op_inv = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()), key="cliente_inv")
+    db_inv = DATABASE_COMBINADA
+    
+    col_i1, col_i2, col_i3 = st.columns(3)
+    with col_i1:
+        cliente_inv = st.text_input("Razón Social", db_inv[op_inv].get("cliente", op_inv))
+        planta_inv = st.text_input("Planta / Instalación", op_inv)
+    with col_i2:
+        area_inv = st.text_input("Área exacta del incidente", "Ej: Bodega principal")
+        fecha_inv = st.date_input("Fecha del Incidente", datetime.date.today())
+    with col_i3:
+        # Solución de Hora congelada
+        hora_inv = st.time_input("Hora del Incidente", st.session_state.hora_inv_default)
+        st.session_state.hora_inv_default = hora_inv
 
-        st.subheader("👤 II. Personal Involucrado")
-        col_p1, col_p2 = st.columns(2)
-        with col_p1:
-            nombre_inv = st.text_input("Nombre del Involucrado", "")
-        with col_p2:
-            cargo_inv = st.text_input("Cargo", "")
-
-        st.subheader("📝 III. Descripción de los Hechos")
-        desc_inv = st.text_area("Relate de manera objetiva cómo ocurrió el incidente:", height=120)
-
-        st.subheader("📊 IV. Clasificación y Puntaje KPI")
-        st.markdown("Seleccione la desviación detectada. El sistema calculará automáticamente la gravedad y el puntaje a descontar.")
-        falta_seleccionada = st.selectbox("Seleccione la Falta o Desviación", LISTA_KPI)
-        
-        if falta_seleccionada == "OTRO (Ingresar manualmente)":
-            falta_texto = st.text_input("Describa la desviación:")
-            gravedad_kpi = st.selectbox("Nivel de Gravedad", ["Leve", "Media", "Grave", "Crítica"])
-            puntaje_kpi = st.number_input("Puntaje a descontar (Ej: -10)", value=0, step=1)
+    st.subheader("👤 II. Personal Involucrado")
+    col_p1, col_p2, col_p3 = st.columns(3)
+    with col_p1:
+        per_sel = st.selectbox("Seleccionar Personal", LISTA_PERSONAL)
+        if per_sel == "OTRO":
+            nombre_inv = st.text_input("Nombre (Manual)")
+            rut_inv_def = ""
+            cargo_inv_def = ""
         else:
-            falta_texto = falta_seleccionada.split(" (")[0]
-            gravedad_kpi = DATABASE_KPI[falta_seleccionada]["gravedad"]
-            puntaje_kpi = DATABASE_KPI[falta_seleccionada]["puntaje"]
-            st.info(f"**Gravedad:** {gravedad_kpi} | **Impacto en KPI:** {puntaje_kpi} puntos")
+            nombre_inv = per_sel
+            rut_inv_def = DATABASE_PERSONAL[per_sel]["rut"]
+            cargo_inv_def = DATABASE_PERSONAL[per_sel]["cargo"]
+    with col_p2:
+        rut_inv = st.text_input("RUT Involucrado", rut_inv_def)
+    with col_p3:
+        cargo_inv = st.text_input("Cargo / Función", cargo_inv_def)
 
-        st.subheader("🔍 V. Análisis de Causas")
-        col_c1, col_c2 = st.columns(2)
-        with col_c1:
-            causa_inmediata = st.text_area("Causas Inmediatas (Acciones/Condiciones Subestándares)", height=100)
-        with col_c2:
-            causa_raiz = st.text_area("Causas Raíz (Factores Personales/Trabajo)", height=100)
+    st.subheader("📝 III. Descripción de los Hechos")
+    desc_inv = st.text_area("Relate de manera objetiva cómo ocurrió el incidente:", height=100)
 
-        st.subheader("✅ VI. Plan de Acción (Medidas Correctivas)")
-        col_pa1, col_pa2, col_pa3 = st.columns(3)
-        with col_pa1:
-            accion_inv = st.text_area("Acción Correctiva", height=68)
-        with col_pa2:
-            responsable_inv = st.text_input("Responsable de ejecución")
-        with col_pa3:
-            fecha_accion_inv = st.date_input("Fecha de Cumplimiento", datetime.date.today() + datetime.timedelta(days=7))
+    st.subheader("📊 IV. Clasificación de la Desviación (KPI)")
+    col_k1, col_k2 = st.columns(2)
+    with col_k1:
+        area_kpi = st.selectbox("1. Seleccione Área", ["Plagas", "Rapaces", "Termitas", "Fumigaciones", "Bioservicios", "Higiene"])
+    with col_k2:
+        categoria_kpi = st.selectbox("2. Seleccione Categoría", ["Seguridad", "Calidad", "RIOHS y Contrato"])
+        
+    opciones_faltas = [f['falta'] for f in DATABASE_KPI_ESTRUCTURADA[categoria_kpi]] + ["OTRO (Ingresar manualmente)"]
+    falta_seleccionada = st.selectbox("3. Seleccione la Desviación Detectada", opciones_faltas)
+    
+    if falta_seleccionada == "OTRO (Ingresar manualmente)":
+        falta_texto = st.text_input("Describa la desviación:")
+        gravedad_kpi = st.selectbox("Nivel de Gravedad", ["Leve", "Media", "Grave", "Crítica"])
+        puntaje_kpi = st.number_input("Puntaje a descontar (Ej: -10)", value=0, step=1)
+    else:
+        falta_texto = falta_seleccionada
+        # Buscar los datos en la base estructurada
+        for item in DATABASE_KPI_ESTRUCTURADA[categoria_kpi]:
+            if item["falta"] == falta_seleccionada:
+                gravedad_kpi = item["gravedad"]
+                puntaje_kpi = item["puntaje"]
+                break
+        st.info(f"**Gravedad:** {gravedad_kpi} | **Impacto en KPI:** {puntaje_kpi} puntos")
 
-        st.subheader("📸 VII. Evidencia y Firmas")
-        fotos_incidentes = st.file_uploader("Sube hasta 3 fotos del incidente", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="fotos_inv")
-        firma_inv = st.file_uploader("Firma del Investigador / Supervisor", type=["png", "jpg", "jpeg", "heic"], key="firma_inv")
+    st.subheader("🔍 V. Análisis de Causas")
+    col_c1, col_c2 = st.columns(2)
+    with col_c1:
+        causa_inmediata = st.text_area("Causas Inmediatas (Acciones/Condiciones Subestándares)", height=100)
+    with col_c2:
+        causa_raiz = st.text_area("Causas Raíz (Factores Personales/Trabajo)", height=100)
 
-        if st.button("🚀 GENERAR INFORME DE INVESTIGACIÓN", use_container_width=True, type="primary"):
-            if not os.path.exists("plantilla_investigacion.docx"):
-                st.error("❌ No se encontró el archivo `plantilla_investigacion.docx`. Por favor, súbelo a GitHub.")
-            else:
-                try:
-                    doc = DocxTemplate("plantilla_investigacion.docx")
-                    
-                    context = {
-                        'cliente': cliente_inv,
-                        'planta': planta_inv,
-                        'area': area_inv,
-                        'fecha_inc': format_fecha_es(fecha_inv),
-                        'hora_inc': hora_inv.strftime("%H:%M"),
-                        'nombre_inv': nombre_inv,
-                        'cargo_inv': cargo_inv,
-                        'descripcion': desc_inv,
-                        'falta_kpi': falta_texto,
-                        'puntaje_kpi': str(puntaje_kpi),
-                        'gravedad_kpi': gravedad_kpi,
-                        'causa_inmediata': causa_inmediata,
-                        'causa_raiz': causa_raiz,
-                        'accion': accion_inv,
-                        'responsable': responsable_inv,
-                        'fecha_accion': format_fecha_es(fecha_accion_inv)
-                    }
+    st.subheader("✅ VI. Plan de Acción (Medidas Correctivas)")
+    col_pa1, col_pa2, col_pa3 = st.columns(3)
+    with col_pa1:
+        accion_inv = st.text_area("Acción Correctiva a Implementar", height=68)
+    with col_pa2:
+        responsable_inv = st.selectbox("Responsable de ejecución", LISTA_PERSONAL)
+    with col_pa3:
+        fecha_accion_inv = st.date_input("Fecha de Cumplimiento", datetime.date.today() + datetime.timedelta(days=7))
 
-                    # Procesar imágenes (Hasta 3 fotos)
-                    rutas_fotos_temp = []
-                    if fotos_incidentes:
-                        for i in range(3):
-                            if i < len(fotos_incidentes):
-                                img_path = procesar_imagen(fotos_incidentes[i])
-                                if img_path:
-                                    context[f'foto_{i+1}'] = InlineImage(doc, img_path, width=Mm(60))
-                                    rutas_fotos_temp.append(img_path)
-                                else:
-                                    context[f'foto_{i+1}'] = ""
-                            else:
-                                context[f'foto_{i+1}'] = ""
-                    else:
-                        context['foto_1'] = ""
-                        context['foto_2'] = ""
-                        context['foto_3'] = ""
-                            
-                    # Procesar Firma
-                    firma_path = None
-                    if firma_inv:
-                        firma_path = procesar_firma(firma_inv)
-                        if firma_path:
-                            context['firma_img'] = InlineImage(doc, firma_path, width=Mm(40))
-                        else:
-                            context['firma_img'] = ""
-                    else:
-                        context['firma_img'] = ""
+    st.subheader("📸 VII. Evidencias Fotográficas")
+    fotos_incidentes = st.file_uploader("Sube fotos del incidente (Soporta múltiples)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="fotos_inv")
 
-                    doc.render(context)
-                    
-                    tmp_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-                    doc.save(tmp_docx.name)
-                    
-                    with open(tmp_docx.name, "rb") as f:
-                        st.session_state.word_investigacion = f.read()
-                        
-                    # Limpieza temporal
-                    for path in rutas_fotos_temp:
-                        if os.path.exists(path): os.remove(path)
-                    if firma_path and os.path.exists(firma_path): os.remove(firma_path)
-                    
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error generando la investigación: {e}")
-                    st.code(traceback.format_exc())
+    if st.button("🚀 GENERAR INFORME DE INVESTIGACIÓN (PDF)", use_container_width=True, type="primary"):
+        try:
+            pdf = InformePDF()
+            pdf.is_investigacion = True
+            pdf.add_page()
+            
+            pdf.t_seccion("I", "DATOS GENERALES DEL INCIDENTE")
+            pdf.tabla(["Cliente / Razón Social", "Planta", "Área del Incidente"], [[cliente_inv, planta_inv, area_inv]], [70, 60, 60])
+            pdf.tabla(["Fecha del Incidente", "Hora del Incidente"], [[format_fecha_es(fecha_inv), hora_inv.strftime("%H:%M")]], [95, 95])
+            
+            pdf.t_seccion("II", "PERSONAL INVOLUCRADO")
+            pdf.tabla(["Nombre", "RUT", "Cargo / Función"], [[nombre_inv, rut_inv, cargo_inv]], [70, 40, 80])
+            
+            pdf.t_seccion("III", "DESCRIPCIÓN DE LOS HECHOS")
+            pdf.set_font("Arial", "", 10)
+            pdf.multi_cell(0, 6, desc_inv if desc_inv else "Sin descripción registrada.", border=1)
+            
+            pdf.t_seccion("IV", "CLASIFICACIÓN DE LA DESVIACIÓN (KPI)")
+            pdf.tabla(["Área y Categoría", "Desviación Detectada", "Gravedad", "Puntaje"], 
+                      [[f"{area_kpi} - {categoria_kpi}", falta_texto, gravedad_kpi, str(puntaje_kpi)]], 
+                      [50, 90, 25, 25])
+            
+            pdf.t_seccion("V", "ANÁLISIS DE CAUSAS")
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(0, 6, "Causas Inmediatas (Acciones o Condiciones Subestándares):", ln=1)
+            pdf.set_font("Arial", "", 10)
+            pdf.multi_cell(0, 6, causa_inmediata if causa_inmediata else "N/A")
+            pdf.ln(2)
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(0, 6, "Causas Raíz (Factores Personales o del Trabajo):", ln=1)
+            pdf.set_font("Arial", "", 10)
+            pdf.multi_cell(0, 6, causa_raiz if causa_raiz else "N/A")
+            
+            pdf.t_seccion("VI", "PLAN DE ACCIÓN Y MEDIDAS CORRECTIVAS")
+            pdf.tabla(["Acción Correctiva", "Responsable", "Fecha Cumplimiento"], 
+                      [[accion_inv, responsable_inv, format_fecha_es(fecha_accion_inv)]], 
+                      [100, 50, 40])
+            
+            if fotos_incidentes:
+                pdf.t_seccion("VII", "REGISTRO FOTOGRÁFICO Y EVIDENCIA", force=True)
+                pdf.galeria(fotos_incidentes)
+                
+            pdf.ln(10)
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(0, 6, "El presente documento certifica la evaluación del incidente descrito y la definición de las medidas correctivas correspondientes.", ln=1)
 
-    if st.session_state.get("word_investigacion") is not None:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_inv:
+                pdf.output(tmp_inv.name)
+                with open(tmp_inv.name, "rb") as finv: st.session_state.pdf_investigacion = finv.read()
+            st.rerun()
+            
+        except Exception as e:
+            st.error(f"Error generando la investigación: {e}")
+            st.code(traceback.format_exc())
+
+    if st.session_state.get("pdf_investigacion") is not None:
         st.success("✅ Informe de Investigación Generado Exitosamente")
         st.download_button(
-            label="📄 DESCARGAR INVESTIGACIÓN EN WORD",
-            data=st.session_state.word_investigacion,
-            file_name="Investigacion_Incidentes_Rentokil.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            label="📄 DESCARGAR INVESTIGACIÓN (PDF)",
+            data=st.session_state.pdf_investigacion,
+            file_name="Investigacion_Incidentes_Rentokil.pdf",
+            mime="application/pdf",
             use_container_width=True
         )
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN (V16.9)
+# LÓGICA: AVISO DE FUMIGACIÓN 
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     with st.sidebar:
