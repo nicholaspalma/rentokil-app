@@ -11,7 +11,7 @@ import traceback
 import gc
 import numpy as np
 
-# --- LIBRERÍAS PARA PLANTILLAS WORD (Solo para Aviso) ---
+# --- NUEVAS LIBRERÍAS PARA PLANTILLAS WORD ---
 try:
     from docxtpl import DocxTemplate, InlineImage
     from docx.shared import Mm
@@ -28,6 +28,13 @@ try:
     register_heif_opener()
 except ImportError:
     pass
+
+# --- SOPORTE PDF A WORD ---
+try:
+    from pdf2docx import Converter
+    PDF2DOCX_INSTALLED = True
+except ImportError:
+    PDF2DOCX_INSTALLED = False
 
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(layout="wide", page_title="Rentokil Mobile PRO")
@@ -70,10 +77,10 @@ if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 if "word_aviso" not in st.session_state: st.session_state.word_aviso = None
-if "pdf_investigacion" not in st.session_state: st.session_state.pdf_investigacion = None
 
-if "hora_emision_default" not in st.session_state: st.session_state.hora_emision_default = datetime.datetime.now().time()
-if "hora_inv_default" not in st.session_state: st.session_state.hora_inv_default = datetime.datetime.now().time()
+# Fijar la hora por defecto una sola vez para que no salte al cambiar de menú
+if "hora_emision_default" not in st.session_state:
+    st.session_state.hora_emision_default = datetime.datetime.now().time()
 
 # Tablas Molinos 
 if "df_d_mol" not in st.session_state:
@@ -118,11 +125,13 @@ DATABASE_ESTRUCTURAS_EXTRA = {
     "AGROCOMMERCE": {"cliente": "AGROCOMMERCE", "rut": "76.000.000-1", "direccion": "Jose Miguel Infante 8745, Renca"}
 }
 
-# LECTOR CSV CLIENTES
+# --- LECTOR DINÁMICO DE CSV ---
 csv_path = None
-for name in ["base de datos .xlsx - Hoja 1.csv", "base de datos .xlsx - Hoja1.csv", "clientes.csv"]:
+posibles_nombres = ["base de datos .xlsx - Hoja 1.csv", "base de datos .xlsx - Hoja1.csv", "clientes.csv"]
+for name in posibles_nombres:
     if os.path.exists(name):
-        csv_path = name; break
+        csv_path = name
+        break
 
 if csv_path:
     try:
@@ -136,105 +145,38 @@ if csv_path:
         for _, row in df_csv.iterrows():
             n_planta = str(row[c_planta]).strip()
             if n_planta and n_planta.lower() != 'nan':
-                new_client = {"cliente": str(row[c_cliente]).strip() if c_cliente else n_planta, "rut": str(row[c_rut]).strip() if c_rut else "", "direccion": str(row[c_dir]).strip() if c_dir else "", "volumen": 0}
+                new_client = {
+                    "cliente": str(row[c_cliente]).strip() if c_cliente else n_planta,
+                    "rut": str(row[c_rut]).strip() if c_rut else "",
+                    "direccion": str(row[c_dir]).strip() if c_dir else "",
+                    "volumen": 0
+                }
                 DATABASE_ESTRUCTURAS_EXTRA[n_planta] = new_client
     except: pass
 
 DATABASE_MOLINOS["OTRO"] = {"cliente": "", "rut": "", "direccion": "", "volumen": 0}
 DATABASE_ESTRUCTURAS_EXTRA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
 
+# --- BASE COMBINADA PARA MÓDULOS GLOBALES ---
 DATABASE_COMBINADA = {**DATABASE_MOLINOS, **DATABASE_ESTRUCTURAS_EXTRA}
-if "OTRO" in DATABASE_COMBINADA: del DATABASE_COMBINADA["OTRO"]
+if "OTRO" in DATABASE_COMBINADA:
+    del DATABASE_COMBINADA["OTRO"]
 DATABASE_COMBINADA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
 
-# --- NUEVA BASE DE DATOS DE PERSONAL (COMPLETA) ---
-DATABASE_PERSONAL = {
-    "Marcos Escobar": {"rut": "8.546.549-K", "cargo": "Técnico"},
-    "Carlos Narbona": {"rut": "20.121.067-4", "cargo": "Representante Técnico"},
-    "Cristian Corral": {"rut": "16.630.012-6", "cargo": "Técnico"},
-    "Eduardo Inostroza": {"rut": "18.692.998-5", "cargo": "Técnico"},
-    "Juan Vásquez": {"rut": "15.629.902-2", "cargo": "Técnico"},
-    "Maximiliano Caro": {"rut": "20.120.770-3", "cargo": "Representante Técnico"},
-    "Víctor Becerra": {"rut": "17.759.655-8", "cargo": "Técnico"},
-    "Sebastián Carrillo": {"rut": "19.514.568-7", "cargo": "Representante Técnico"},
-    "Cristian Saavedra": {"rut": "19.703.885-3", "cargo": "Técnico"},
-    "Juan Callofa": {"rut": "15.531.428-1", "cargo": "Representante Técnico"},
-    "Nicholas Palma": {"rut": "17.227.760-8", "cargo": "Representante Técnico"},
-    "Vicente Madariaga": {"rut": "15.725.282-8", "cargo": "Representante Técnico"},
-    "Stefano Pernigotti": {"rut": "18.085.548-3", "cargo": "Representante Técnico"},
-    "Herbert Diaz": {"rut": "8.622.83-1", "cargo": "Representante Técnico"},
-    "Pavel Sotomayor": {"rut": "15.331.334-2", "cargo": "Representante Técnico"},
-    "OTRO": {"rut": "", "cargo": ""}
+# --- NUEVA BASE DE DATOS DE REPRESENTANTES ---
+DATABASE_REPRESENTANTES = {
+    "Nicholas Palma": {"rut": "17.227.760-8", "correo": "nicholas.palma@rentokil-initial.com"},
+    "Vicente Madariaga": {"rut": "15.725.282-8", "correo": "vicente.madariaga@rentokil-initial.com"},
+    "Sebastián Carrillo": {"rut": "19.514.568-7", "correo": "sebastian.carrillo@rentokil-initial.com"},
+    "Stefano Pernigotti": {"rut": "18.085.548-3", "correo": "stefano.pernigotti@rentokil-initial.com"},
+    "Herbert Diaz": {"rut": "8.622.83-1", "correo": "herbert.diaz@rentokil-initial.com"},
+    "Juan Callofa": {"rut": "15.531.428-1", "correo": "juan.callofa@rentokil-initial.com"},
+    "Maximiliano Caro": {"rut": "20.120.770-3", "correo": "maximiliano.caro@rentokil-initial.com"},
+    "Pavel Sotomayor": {"rut": "15.331.334-2", "correo": "pavel.sotomayor@rentokil-initial.com"},
+    "Carlos Narbona": {"rut": "20.121.067-4", "correo": "carlos.narbona@rentokil-initial.com"},
+    "OTRO": {"rut": "", "correo": ""}
 }
-LISTA_PERSONAL = list(DATABASE_PERSONAL.keys())
-LISTA_REPRESENTANTES = [k for k, v in DATABASE_PERSONAL.items() if v["cargo"] == "Representante Técnico" or k == "OTRO"]
-
-# --- BASE DE DATOS KPI (MENÚS EN CASCADA) ---
-DATABASE_KPI_ESTRUCTURADA = {
-    "Plagas": {
-        "Servicio desinsectacion sin señaletica calavera, medidas preventivas en el mes": 8,
-        "Servicio sanitizacion baños sin sanitizar y marcaje durante el mes": 4,
-        "Servicio sanitizacion baños sin sanitizar y marcaje por 2 vez": 8,
-        "Servicio de desinsectacion y sanitizacion desprolijo (durante el mes)": 4,
-        "Servicio de desinsectacion y sanitizacion desprolijo (por 2 vez)": 8,
-        "Mantencion desprolija de dispositivos de control, feromonas (durante el mes)": 4,
-        "Mantencion desprolija de dispositivos de control, feromonas (por 2 vez)": 8,
-        "Mantencion desprolija de dispositivos de control, tuv (durante el mes)": 4,
-        "Mantencion desprolija de dispositivos de control, tuv (por 2 vez)": 8,
-        "Mantencion desprolija de dispositivos de control, en mal estado (durante el mes)": 4,
-        "Mantencion desprolija de dispositivos de control, en mal estado (por 2 vez)": 8,
-        "No realización de planos durante la instalacion/emergencia (durante el mes)": 4,
-        "No realización de planos durante la instalacion/emergencia (por 2 vez)": 8,
-        "Devolucion de guia de despacho (durante el mes)": 4,
-        "Devolucion de guia de despacho (por 2 vez)": 8
-    },
-    "Fumigaciones": {
-        "No realizar inyeccion/ventilacion según proc. (Sin fugas, en el mes)": 4,
-        "No realizar inyeccion/ventilacion según proc. (Sin fugas, por 2 vez)": 8,
-        "No realizar inyeccion/ventilacion según proc. (Con fugas o riesgo)": 8
-    },
-    "Rapaces": {
-        "Mantencion desprolija de dispositivos de control de aves (durante el mes)": 4,
-        "Mantencion desprolija de dispositivos de control de aves (por 2 vez)": 8
-    },
-    "Seguridad": {
-        "No realiza Check List de Vehículos durante el mes": 8,
-        "Tener accidentes de responsabilidad directa": 8,
-        "Uso incorrecto de EPP": 8,
-        "No usar EPP para los riesgos asociados en el lugar de trabajo": 8,
-        "Reclamo de cliente asociado a la Seguridad o mala conducción (durante el mes)": 4,
-        "Reclamo de cliente asociado a la Seguridad o mala conducción (2 vez)": 8,
-        "No dar aviso de manera inmediata cuando ocurra un accidente o incidente": 8,
-        "Realiza trabajo en altura/confinado sin examenes medicos al dia": 8,
-        "Conducir a exceso de velocidad 1 a 5 km/h (1 min)": 4,
-        "Conducir a exceso de velocidad 6 a 9 km/h (1 min)": 8,
-        "No dar correcta disposición a los residuos generados": 8,
-        "Disposición de residuos no autorizados en clientes/particulares": 8,
-        "Conducir a exceso de velocidad > 10 km/h": 8,
-        "Reclamo de cliente asociado a mala gestión/calidad/puntualidad (durante el mes)": 4,
-        "Reclamo de cliente asociado a mala gestión/calidad/puntualidad (2 vez)": 8
-    },
-    "Calidad": {
-        "Reprogramacion directo con cliente": 4,
-        "No comunica via correo si no cumple la ruta asignada": 4,
-        "No cumple en realizar servicios programados sin justificacion": 4,
-        "Certificados sin informacion o incompleta o ilegible": 6,
-        "Certificado no cumple indicaciones tecnicas": 6,
-        "No envio de informes asociados al certificado": 6,
-        "No ingresa mínimo dos recomendaciones por visita": 6,
-        "Guia de despacho sin nombre, rut y firma": 6,
-        "Reducion de la jornada y no cumplimiento de los procedimientos": 6,
-        "Falta de insumos, herramientas y/o equipos en camioneta": 6,
-        "No Utilizar ropa corporativa al iniciar la jornada": 6,
-        "No Respetar la normativa de los clientes (EPP, uso joyas)": 6,
-        "Vehiculo sucio, equipos mal almacenados": 6,
-        "Baja de Cliente asociada a mala gestión (<= 2%)": 0,
-        "Baja de Cliente asociada a mala gestión (> 2%)": 8,
-        "No usar Movil Form / Mala efectividad de llenado": 4, # Simplificado para el multiselect
-        "No notifica alarmas por Formulario o correo (1 vez)": 2,
-        "No notifica alarmas por Formulario o correo (2 vez)": 4
-    }
-}
+LISTA_REPRESENTANTES = list(DATABASE_REPRESENTANTES.keys())
 
 # --- FUNCIONES UTILITARIAS ---
 def format_fecha_es(fecha):
@@ -295,7 +237,7 @@ def procesar_firma(uploaded_file):
     except: return None
 
 # ==============================================================================
-# CLASE PDF: REPORTES NATIVOS
+# CLASE PDF: INFORME TÉCNICO Y TRABAJO
 # ==============================================================================
 class InformePDF(FPDF):
     def rounded_rect(self, x, y, w, h, r, style=''):
@@ -316,14 +258,42 @@ class InformePDF(FPDF):
         self.set_font("Arial", "B", 9)
         self.set_fill_color(*color)
         self.set_text_color(255, 255, 255)
-        x_start = self.get_x(); y_start = self.get_y()
+        x_start = self.get_x()
+        y_start = self.get_y()
         self.rounded_rect(x_start, y_start, sum(widths), 7, 2, 'F')
-        for i, h in enumerate(header): self.cell(widths[i], 7, h, border=0, align='C', fill=False)
-        self.ln(); self.set_font("Arial", "", 9); self.set_text_color(0, 0, 0)
+        for i, h in enumerate(header):
+            self.cell(widths[i], 7, h, border=0, align='C', fill=False)
+        self.ln()
+        self.set_font("Arial", "", 9)
+        self.set_text_color(0, 0, 0)
         for row in data:
-            for i, d in enumerate(row): self.cell(widths[i], 8, str(d), border='B', align='C', fill=False)
+            for i, d in enumerate(row):
+                self.cell(widths[i], 8, str(d), border='B', align='C', fill=False)
             self.ln()
         self.ln(3)
+
+    def tabla_visita(self, label, lines):
+        self.set_font("Arial", "B", 9)
+        y_start = self.get_y()
+        h = max(len(lines) * 5 + 4, 8)
+        if y_start + h > 270:
+            self.add_page()
+            y_start = self.get_y()
+
+        self.set_draw_color(200, 200, 200)
+        self.rect(10, y_start, 50, h)
+        self.rect(60, y_start, 140, h)
+
+        self.set_xy(10, y_start + (h/2 - 2))
+        self.cell(50, 4, label, align='C')
+
+        self.set_xy(60, y_start + 2)
+        self.set_font("Arial", "", 9)
+        for line in lines:
+            self.set_x(62)
+            self.cell(136, 5, line, ln=1)
+
+        self.set_y(y_start + h)
 
     def header(self):
         if os.path.exists('logo.png'):
@@ -331,11 +301,9 @@ class InformePDF(FPDF):
             except: pass
         self.set_font("Arial", "B", 14)
         self.set_text_color(*COLOR_PRIMARIO)
-        
         titulo = "INFORME TÉCNICO DE FUMIGACIÓN"
-        if getattr(self, 'is_visita', False): titulo = "VISITA TÉCNICA PRE-FUMIGACIÓN"
-        if getattr(self, 'is_investigacion', False): titulo = "INVESTIGACIÓN DE INCIDENTES / KPI"
-            
+        if getattr(self, 'is_visita', False):
+            titulo = "VISITA TÉCNICA PRE-FUMIGACIÓN"
         self.cell(0, 8, titulo, ln=1, align="R")
         self.set_font("Arial", "I", 8)
         self.set_text_color(100, 100, 100)
@@ -379,6 +347,53 @@ class InformePDF(FPDF):
         if len(fotos) % 2 != 0: self.ln(70)
 
 # ==============================================================================
+# CLASE PDF: CERTIFICADO
+# ==============================================================================
+class CertificadoPDF(FPDF):
+    def rounded_rect(self, x, y, w, h, r, style=''):
+        k = self.k; hp = self.h
+        op = 'f' if style == 'F' else 'B' if style in ['FD', 'DF'] else 'S'
+        MyArc = 4/3 * (math.sqrt(2) - 1)
+        self._out(f'{(x+r)*k:.2f} {(hp-y)*k:.2f} m'); xc, yc = x+w-r, y+r; self._out(f'{xc*k:.2f} {(hp-y)*k:.2f} l')
+        self._out(f'{(xc+r*MyArc)*k:.2f} {(hp-y)*k:.2f} {(x+w)*k:.2f} {(hp-(yc-r*MyArc))*k:.2f} {(x+w)*k:.2f} {(hp-yc)*k:.2f} c')
+        xc, yc = x+w-r, y+h-r; self._out(f'{(x+w)*k:.2f} {(hp-yc)*k:.2f} l')
+        self._out(f'{(x+w)*k:.2f} {(hp-(yc+r*MyArc))*k:.2f} {(xc+r*MyArc)*k:.2f} {(hp-(y+h))*k:.2f} {xc*k:.2f} {(hp-(y+h))*k:.2f} c')
+        xc, yc = x+r, y+h-r; self._out(f'{xc*k:.2f} {(hp-(y+h))*k:.2f} l')
+        self._out(f'{(xc-r*MyArc)*k:.2f} {(hp-(y+h))*k:.2f} {x*k:.2f} {(hp-(yc+r*MyArc))*k:.2f} {x*k:.2f} {(hp-yc)*k:.2f} c')
+        xc, yc = x+r, y+r; self._out(f'{x*k:.2f} {(hp-yc)*k:.2f} l')
+        self._out(f'{x*k:.2f} {(hp-(yc-r*MyArc))*k:.2f} {(xc-r*MyArc)*k:.2f} {(hp-y)*k:.2f} {xc*k:.2f} {(hp-y)*k:.2f} c')
+        self._out(op)
+
+    def header(self):
+        if os.path.exists('logo.png'):
+            try: self.image('logo.png', 10, 8, 33)
+            except: pass
+        self.set_font("Arial", "B", 10); self.set_text_color(100, 100, 100); self.set_y(10)
+        self.cell(0, 5, "Rentokil Initial Chile SpA | RUT 76.360.903-0", ln=1, align="R")
+        self.set_font("Arial", "", 8); self.cell(0, 4, "Resolución exenta N°2307418842 reg. Del Maule del 16-10 2023", ln=1, align="R")
+        self.ln(10); self.set_draw_color(*COLOR_CELESTE_CLARO); self.set_line_width(0.8)
+        self.line(10, self.get_y(), 200, self.get_y()); self.ln(5)
+
+    def footer(self):
+        self.set_y(-15); self.set_font("Arial", "I", 8); self.set_text_color(150, 150, 150)
+        self.cell(0, 10, "Documento Oficial Rentokil Initial Chile SpA", align="C")
+
+    def t_rojo(self, texto):
+        self.ln(3); self.set_font("Arial", "B", 10); self.set_fill_color(*COLOR_PRIMARIO); self.set_text_color(255, 255, 255)
+        self.cell(0, 7, f"  {texto.upper()}", ln=1, fill=True); self.set_text_color(0, 0, 0); self.ln(2)
+
+    def t_cert(self, header, data, widths):
+        self.set_font("Arial", "B", 8); self.set_fill_color(*COLOR_CELESTE_CLARO); self.set_text_color(255, 255, 255)
+        x_start = self.get_x(); y_start = self.get_y()
+        self.rounded_rect(x_start, y_start, sum(widths), 7, 2, 'F')
+        for i, h in enumerate(header): self.cell(widths[i], 7, h, border=0, align='C', fill=False)
+        self.ln(); self.set_font("Arial", "", 8); self.set_text_color(0, 0, 0)
+        for row in data:
+            for i, d in enumerate(row): self.cell(widths[i], 8, str(d), border='B', align='C', fill=False)
+            self.ln()
+        self.ln(4)
+
+# ==============================================================================
 # PANTALLA DE INICIO (HUB PRINCIPAL)
 # ==============================================================================
 if st.session_state.app_mode == "HOME":
@@ -390,7 +405,7 @@ if st.session_state.app_mode == "HOME":
     
     st.markdown("---")
     
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c_new = st.columns(4)
     with c1:
         if st.button("🏭 MOLINOS\n(Técnico y Cert.)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "MOLINOS"; st.rerun()
@@ -400,226 +415,21 @@ if st.session_state.app_mode == "HOME":
     with c3:
         if st.button("📋 VISITA TÉCNICA\n(Evaluación Previa)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "VISITA"; st.rerun()
+    with c_new:
+        if st.button("📢 NOTIFICACIÓN\n(Aviso al Seremi)", use_container_width=True, type="primary"):
+            st.session_state.app_mode = "AVISO"; st.rerun()
             
     st.write("")
-    c4, c5, c6 = st.columns(3)
+    c4, c5 = st.columns(2)
     with c4:
-        if st.button("📢 NOTIFICACIÓN\n(Aviso al Seremi)", use_container_width=True, type="secondary"):
-            st.session_state.app_mode = "AVISO"; st.rerun()
-    with c5:
-        if st.button("📸 INFORME DE TRABAJO\n(Reporte Visual)", use_container_width=True, type="secondary"):
+        if st.button("📸 INFORME DE TRABAJO\n(Fotos a Pantalla Completa)", use_container_width=True, type="secondary"):
             st.session_state.app_mode = "TRABAJO"; st.rerun()
-    with c6:
-        if st.button("⚠️ INVESTIGACIÓN\n(Reporte de Incidentes)", use_container_width=True, type="primary"):
-            st.session_state.app_mode = "INVESTIGACION"; st.rerun()
+    with c5:
+        if st.button("📄 CONVERTIR PDF A WORD\n(Transforma archivos)", use_container_width=True, type="secondary"):
+            st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: INVESTIGACIÓN DE INCIDENTES (100% NATIVA EN PDF - V17.2)
-# ==============================================================================
-elif st.session_state.app_mode == "INVESTIGACION":
-    with st.sidebar:
-        if os.path.exists("logo.png"): st.image("logo.png", width=120)
-        if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
-        st.info("Modo: Investigación de Incidentes y Evaluación KPI")
-
-    st.title("⚠️ Informe de Investigación de Incidentes (KPI)")
-    
-    st.subheader("📋 I. Datos Generales del Incidente")
-    op_inv = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()), key="cliente_inv")
-    db_inv = DATABASE_COMBINADA
-    
-    col_i1, col_i2, col_i3 = st.columns(3)
-    with col_i1:
-        cliente_inv = st.text_input("Razón Social", db_inv[op_inv].get("cliente", op_inv))
-        planta_inv = st.text_input("Planta / Instalación", op_inv)
-    with col_i2:
-        area_inv = st.text_input("Área exacta del incidente", "Ej: Bodega principal")
-        fecha_inv = st.date_input("Fecha del Incidente", datetime.date.today())
-    with col_i3:
-        hora_inv = st.time_input("Hora del Incidente", st.session_state.hora_inv_default)
-        st.session_state.hora_inv_default = hora_inv
-
-    st.subheader("👤 II. Personal Involucrado (Evaluado)")
-    col_p1, col_p2, col_p3 = st.columns(3)
-    with col_p1:
-        per_sel = st.selectbox("Seleccionar Personal", LISTA_PERSONAL)
-        if per_sel == "OTRO":
-            nombre_inv = st.text_input("Nombre (Manual)")
-            rut_inv_def = ""
-            cargo_inv_def = ""
-        else:
-            nombre_inv = per_sel
-            rut_inv_def = DATABASE_PERSONAL[per_sel]["rut"]
-            cargo_inv_def = DATABASE_PERSONAL[per_sel]["cargo"]
-    with col_p2:
-        rut_inv = st.text_input("RUT Involucrado", rut_inv_def)
-    with col_p3:
-        cargo_inv = st.text_input("Cargo / Función", cargo_inv_def)
-
-    st.subheader("📝 III. Descripción de los Hechos")
-    desc_inv = st.text_area("Relate de manera objetiva cómo ocurrió el incidente:", height=100)
-
-    # --- MOTOR LÓGICO KPI ---
-    st.subheader("📊 IV. Clasificación de la Desviación (Motor KPI)")
-    st.markdown("Seleccione el Área/Categoría para desplegar las faltas. **Puede seleccionar múltiples faltas.**")
-    
-    col_k1, col_k2 = st.columns(2)
-    with col_k1:
-        # Menú Nivel 1: Área
-        tipo_area = st.selectbox("1. Seleccione Origen de la Falta", ["Área Específica (Plagas, Fumigaciones, etc.)", "Categoría General (Seguridad, Calidad, etc.)"])
-        
-    with col_k2:
-        # Menú Nivel 2: Cascada
-        if tipo_area == "Área Específica (Plagas, Fumigaciones, etc.)":
-            filtro_2 = st.selectbox("2. Seleccione Área", ["Plagas", "Fumigaciones", "Rapaces", "Termitas", "Bioservicios", "Higiene"])
-        else:
-            filtro_2 = st.selectbox("2. Seleccione Categoría General", ["Seguridad", "Calidad", "RIOHS y Contrato"])
-
-    # Menú Nivel 3: Las Faltas
-    opciones_faltas = []
-    if filtro_2 in DATABASE_KPI_ESTRUCTURADA:
-        opciones_faltas = list(DATABASE_KPI_ESTRUCTURADA[filtro_2].keys())
-        
-    faltas_seleccionadas = st.multiselect("3. Seleccione la(s) Desviación(es) Cometida(s)", opciones_faltas)
-    
-    # Cálculo de Penalidad Acumulada
-    puntos_acumulados = 0
-    tabla_faltas_pdf = [] # Almacena datos para el PDF
-    
-    for falta in faltas_seleccionadas:
-        puntos_falta = DATABASE_KPI_ESTRUCTURADA[filtro_2][falta]
-        puntos_acumulados += puntos_falta
-        tabla_faltas_pdf.append([filtro_2, falta, str(puntos_falta)])
-        
-    # Lógica de Evaluación de Bono
-    if puntos_acumulados == 0:
-        bono_resultado = "100% Bono"
-        accion_kpi = "Sin Acción (OK)"
-        color_kpi = "green"
-    elif 1 <= puntos_acumulados <= 2:
-        bono_resultado = "100% Bono"
-        accion_kpi = "Correo resultado final"
-        color_kpi = "orange"
-    elif 3 <= puntos_acumulados <= 4:
-        bono_resultado = "80% Bono"
-        accion_kpi = "Correo resultado final"
-        color_kpi = "orange"
-    elif 5 <= puntos_acumulados <= 7:
-        bono_resultado = "50% Bono"
-        accion_kpi = "Carta amonestación (RRHH)"
-        color_kpi = "red"
-    else: # 8 o más
-        bono_resultado = "0% Bono (Pérdida Total)"
-        accion_kpi = "A definir con jefatura (RRHH)"
-        color_kpi = "red"
-
-    # Tarjeta Visual de Resultados
-    st.markdown(f"""
-        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 5px solid {color_kpi}; margin-top:10px;">
-            <h4 style="margin:0; color: #333;">Veredicto del Sistema</h4>
-            <p style="margin:5px 0;"><b>Puntaje de Penalización Acumulado:</b> {puntos_acumulados} puntos</p>
-            <p style="margin:5px 0;"><b>Impacto en Bono de Gestión:</b> {bono_resultado}</p>
-            <p style="margin:0;"><b>Acción a Tomar:</b> {accion_kpi}</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-    st.subheader("🔍 V. Análisis de Causas")
-    col_c1, col_c2 = st.columns(2)
-    with col_c1:
-        causa_inmediata = st.text_area("Causas Inmediatas (Acciones/Condiciones Subestándares)", height=100)
-    with col_c2:
-        causa_raiz = st.text_area("Causas Raíz (Factores Personales/Trabajo)", height=100)
-
-    st.subheader("✅ VI. Plan de Acción (Medidas Correctivas)")
-    col_pa1, col_pa2, col_pa3 = st.columns(3)
-    with col_pa1:
-        accion_inv = st.text_area("Acción Correctiva a Implementar", height=68)
-    with col_pa2:
-        responsable_inv = st.selectbox("Responsable de ejecución", LISTA_PERSONAL)
-    with col_pa3:
-        fecha_accion_inv = st.date_input("Fecha de Cumplimiento", datetime.date.today() + datetime.timedelta(days=7))
-
-    st.subheader("📸 VII. Evidencias Fotográficas y Anexos")
-    fotos_incidentes = st.file_uploader("Sube fotos o archivos PDF de evidencia", accept_multiple_files=True, type=['png','jpg','jpeg','heic','pdf'], key="evidencia_inv")
-
-    if st.button("🚀 GENERAR INFORME DE INVESTIGACIÓN (PDF)", use_container_width=True, type="primary"):
-        try:
-            pdf = InformePDF()
-            pdf.is_investigacion = True
-            pdf.add_page()
-            
-            pdf.t_seccion("I", "DATOS GENERALES DEL INCIDENTE")
-            pdf.tabla(["Cliente / Razón Social", "Planta", "Área del Incidente"], [[cliente_inv, planta_inv, area_inv]], [70, 60, 60])
-            pdf.tabla(["Fecha del Incidente", "Hora del Incidente"], [[format_fecha_es(fecha_inv), hora_inv.strftime("%H:%M")]], [95, 95])
-            
-            pdf.t_seccion("II", "PERSONAL INVOLUCRADO (EVALUADO)")
-            pdf.tabla(["Nombre", "RUT", "Cargo / Función"], [[nombre_inv, rut_inv, cargo_inv]], [70, 40, 80])
-            
-            pdf.t_seccion("III", "DESCRIPCIÓN DE LOS HECHOS")
-            pdf.set_font("Arial", "", 10)
-            pdf.multi_cell(0, 6, desc_inv if desc_inv else "Sin descripción registrada.", border=1)
-            
-            pdf.t_seccion("IV", "EVALUACIÓN KPI Y PENALIZACIONES")
-            if not tabla_faltas_pdf:
-                pdf.set_font("Arial", "I", 10)
-                pdf.cell(0, 6, "No se registraron faltas asociadas al KPI.", ln=1)
-            else:
-                pdf.tabla(["Categoría", "Desviación Detectada", "Pts Castigo"], tabla_faltas_pdf, [40, 130, 20])
-                
-            pdf.ln(2)
-            pdf.set_font("Arial", "B", 10)
-            pdf.cell(100, 6, f"PUNTAJE TOTAL ACUMULADO: {puntos_acumulados} Pts", border=1)
-            pdf.cell(90, 6, f"RESULTADO BONO: {bono_resultado}", border=1, ln=1)
-            pdf.cell(190, 6, f"ACCIÓN NORMATIVA: {accion_kpi}", border=1, ln=1)
-            
-            pdf.t_seccion("V", "ANÁLISIS DE CAUSAS")
-            pdf.set_font("Arial", "B", 10)
-            pdf.cell(0, 6, "Causas Inmediatas (Acciones o Condiciones Subestándares):", ln=1)
-            pdf.set_font("Arial", "", 10)
-            pdf.multi_cell(0, 6, causa_inmediata if causa_inmediata else "N/A")
-            pdf.ln(2)
-            pdf.set_font("Arial", "B", 10)
-            pdf.cell(0, 6, "Causas Raíz (Factores Personales o del Trabajo):", ln=1)
-            pdf.set_font("Arial", "", 10)
-            pdf.multi_cell(0, 6, causa_raiz if causa_raiz else "N/A")
-            
-            pdf.t_seccion("VI", "PLAN DE ACCIÓN Y MEDIDAS CORRECTIVAS")
-            pdf.tabla(["Acción Correctiva", "Responsable", "Fecha Cumplimiento"], 
-                      [[accion_inv, responsable_inv, format_fecha_es(fecha_accion_inv)]], 
-                      [100, 50, 40])
-            
-            # Procesar solo las imágenes (los PDF anexos el usuario los descarga aparte)
-            fotos_validas = [f for f in fotos_incidentes if f.name.lower().endswith(('.png', '.jpg', '.jpeg', '.heic'))] if fotos_incidentes else []
-            
-            if fotos_validas:
-                pdf.t_seccion("VII", "REGISTRO FOTOGRÁFICO Y EVIDENCIA", force=True)
-                pdf.galeria(fotos_validas)
-                
-            pdf.ln(15)
-            pdf.set_font("Arial", "B", 10)
-            pdf.cell(0, 6, "El presente documento certifica la evaluación del incidente descrito y la definición de las medidas correctivas.", ln=1)
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_inv:
-                pdf.output(tmp_inv.name)
-                with open(tmp_inv.name, "rb") as finv: st.session_state.pdf_investigacion = finv.read()
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f"Error generando la investigación: {e}")
-            st.code(traceback.format_exc())
-
-    if st.session_state.get("pdf_investigacion") is not None:
-        st.success("✅ Informe de Investigación Generado Exitosamente")
-        st.download_button(
-            label="📄 DESCARGAR INVESTIGACIÓN (PDF)",
-            data=st.session_state.pdf_investigacion,
-            file_name="Investigacion_Incidentes_Rentokil.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
-
-# ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN
+# LÓGICA: AVISO DE FUMIGACIÓN 
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     with st.sidebar:
@@ -663,8 +473,8 @@ elif st.session_state.app_mode == "AVISO":
                 correo_repre_default = ""
             else:
                 repre_a = rep_a_sel
-                rut_repre_default = DATABASE_PERSONAL[rep_a_sel]["rut"]
-                correo_repre_default = DATABASE_REPRESENTANTES.get(rep_a_sel, {}).get("correo", "")
+                rut_repre_default = DATABASE_REPRESENTANTES[rep_a_sel]["rut"]
+                correo_repre_default = DATABASE_REPRESENTANTES[rep_a_sel]["correo"]
                 
         with col_r2:
             rut_repre_a = st.text_input("RUT Representante", rut_repre_default)
@@ -1406,6 +1216,7 @@ elif st.session_state.app_mode == "TRABAJO":
                 
                 pdf.tabla_moderna(["CLIENTE / RAZÓN SOCIAL", "DIRECCIÓN", "FECHA"], [[str(cli_d), str(dir_d), format_fecha_es(fec_d)]], [80, 70, 40], color=COLOR_PRIMARIO)
                 
+                # --- NUEVO CUADRO DETALLE DE LABORES ---
                 pdf.set_font("Arial", "B", 9)
                 pdf.set_fill_color(*COLOR_PRIMARIO)
                 pdf.set_text_color(255, 255, 255)
@@ -1419,6 +1230,7 @@ elif st.session_state.app_mode == "TRABAJO":
                 texto_detalles = str(detalles_d).strip() if str(detalles_d).strip() else "Sin observaciones registradas."
                 pdf.multi_cell(190, 5, texto_detalles, border='B', align='L')
                 pdf.ln(5)
+                # ----------------------------------------
                 
                 progress_text = "Procesando imágenes. Por favor espera..."
                 my_bar = st.progress(0, text=progress_text)
@@ -1428,8 +1240,9 @@ elif st.session_state.app_mode == "TRABAJO":
                     if tmp_p:
                         ratio = w / h
                         if i == 0:
+                            # Se reduce la primera foto para asegurar que quepan los detalles
                             avail_h = 260 - pdf.get_y()
-                            max_w_cover = 150 
+                            max_w_cover = 150 # Foto más pequeña
                             if (max_w_cover / ratio) <= avail_h:
                                 final_w = max_w_cover; final_h = max_w_cover / ratio
                             else:
@@ -1456,6 +1269,47 @@ elif st.session_state.app_mode == "TRABAJO":
             except Exception as e: st.error(f"Error generando Informe de Trabajo: {e}"); st.code(traceback.format_exc())
         else:
             st.warning("Debes subir al menos una foto para generar el informe de trabajo.")
+
+# ==============================================================================
+# LÓGICA: PDF A WORD
+# ==============================================================================
+elif st.session_state.app_mode == "PDF2WORD":
+    with st.sidebar:
+        if os.path.exists("logo.png"): st.image("logo.png", width=120)
+        if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
+        st.info("Modo: PDF a Word")
+        
+    st.title("📄 Convertidor Mágico: PDF a Word")
+    
+    if not PDF2DOCX_INSTALLED:
+        st.error("⚠️ Falta una librería en el servidor.")
+    else:
+        st.markdown("Sube cualquier PDF tal cual lo tienes en el celular. El sistema internamente generará una copia idéntica en Word (`.docx`). **No necesitas cambiar ningún nombre, la aplicación lo hace por ti.**")
+        uploaded_pdf = st.file_uploader("Selecciona tu documento", type=['pdf'])
+        
+        if uploaded_pdf and st.button("🔄 CONVERTIR A WORD", use_container_width=True, type="primary"):
+            with st.spinner("Convirtiendo documento... Esto puede tardar unos segundos..."):
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as t_pdf:
+                        t_pdf.write(uploaded_pdf.read())
+                        pdf_path = t_pdf.name
+                    
+                    docx_path = pdf_path.replace(".pdf", ".docx")
+                    cv = Converter(pdf_path)
+                    cv.convert(docx_path)
+                    cv.close()
+                    
+                    original_name = uploaded_pdf.name.replace(".pdf", "")
+                    with open(docx_path, "rb") as docx_file:
+                        st.download_button(
+                            label="✅ DESCARGAR DOCUMENTO WORD",
+                            data=docx_file.read(),
+                            file_name=f"{original_name}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True
+                        )
+                except Exception as e:
+                    st.error(f"Hubo un error durante la conversión. Asegúrate de que el PDF no esté protegido con clave. Detalle: {e}")
 
 # ==============================================================================
 # BOTONES DE DESCARGA GLOBALES
