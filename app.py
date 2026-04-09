@@ -101,76 +101,75 @@ if "df_m_est" not in st.session_state:
 
 
 # ==============================================================================
-# LECTURA DINÁMICA DE BASES DE DATOS (A PRUEBA DE FALLOS)
+# LECTURA DINÁMICA DE EXCEL (.XLSX) Y FILTRO POR SUCURSAL
 # ==============================================================================
 DATABASE_COMBINADA = {}
 DATABASE_REPRESENTANTES = {}
 LISTA_SUCURSALES_SET = set()
 
 def obtener_nombre_columna(df, palabras_clave):
-    columnas_lower = [str(c).strip().lower() for c in df.columns]
-    for i, col in enumerate(columnas_lower):
-        if any(palabra in col for palabra in palabras_clave):
-            return df.columns[i]
+    """Busca una columna ignorando mayúsculas, minúsculas o tildes"""
+    # Normalizamos las columnas quitando tildes y espacios
+    columnas = df.columns
+    for col in columnas:
+        col_norm = str(col).lower().replace('á','a').replace('é','e').replace('í','i').replace('ó','o').replace('ú','u').strip()
+        if any(palabra in col_norm for palabra in palabras_clave):
+            return col
     return None
 
-# 1. Buscar y cargar archivo de clientes
-csv_clientes = None
-for file in os.listdir('.'):
-    if file.endswith('.csv') and ('base' in file.lower() or 'cliente' in file.lower() or 'dato' in file.lower()):
-        csv_clientes = file
-        break
+def cargar_archivo_excel(palabras_en_nombre):
+    """Busca en el directorio un archivo Excel que coincida con el nombre"""
+    archivos = os.listdir('.')
+    for file in archivos:
+        nombre_lower = file.lower()
+        if any(p in nombre_lower for p in palabras_en_nombre):
+            try:
+                if file.endswith('.xlsx') or file.endswith('.xls'):
+                    return pd.read_excel(file)
+                elif file.endswith('.csv'):
+                    return pd.read_csv(file, sep=None, engine='python', encoding='utf-8-sig')
+            except Exception as e:
+                st.error(f"⚠️ Error intentando leer el archivo {file}: {e}")
+                return pd.DataFrame()
+    return pd.DataFrame()
 
-if csv_clientes:
-    try:
-        # Usamos sep=None para que detecte automáticamente si es coma o punto y coma
-        df_clientes = pd.read_csv(csv_clientes, sep=None, engine='python', encoding='utf-8-sig')
-        c_cliente = obtener_nombre_columna(df_clientes, ['raz', 'cliente', 'planta', 'social'])
-        c_rut = obtener_nombre_columna(df_clientes, ['rut'])
-        c_dir = obtener_nombre_columna(df_clientes, ['dir'])
-        c_suc = obtener_nombre_columna(df_clientes, ['sucursal', 'suc'])
+# 1. Cargar archivo de clientes (Busca "base de datos")
+df_clientes = cargar_archivo_excel(['base', 'cliente', 'dato'])
 
-        if c_suc:
-            df_clientes['Sucursal_Filtro'] = df_clientes[c_suc].astype(str).str.strip().str.upper()
-            LISTA_SUCURSALES_SET.update(df_clientes['Sucursal_Filtro'].replace('NAN', np.nan).dropna().unique())
-    except Exception as e:
-        st.error(f"Error interno leyendo clientes: {e}")
-        df_clientes = pd.DataFrame()
-        c_cliente, c_rut, c_dir, c_suc = None, None, None, None
+if not df_clientes.empty:
+    c_cliente = obtener_nombre_columna(df_clientes, ['razon', 'cliente', 'planta', 'social'])
+    c_rut = obtener_nombre_columna(df_clientes, ['rut'])
+    c_dir = obtener_nombre_columna(df_clientes, ['dir'])
+    c_suc = obtener_nombre_columna(df_clientes, ['sucursal', 'suc'])
+
+    if c_suc:
+        df_clientes['Sucursal_Filtro'] = df_clientes[c_suc].astype(str).str.strip().str.upper()
+        LISTA_SUCURSALES_SET.update(df_clientes['Sucursal_Filtro'].replace('NAN', np.nan).dropna().unique())
 else:
-    df_clientes = pd.DataFrame()
     c_cliente, c_rut, c_dir, c_suc = None, None, None, None
 
-# 2. Buscar y cargar archivo de Técnicos
-csv_tecnicos = None
-for file in os.listdir('.'):
-    if file.endswith('.csv') and ('rep' in file.lower() or 'tec' in file.lower()):
-        csv_tecnicos = file
-        break
 
-if csv_tecnicos:
-    try:
-        df_tecnicos = pd.read_csv(csv_tecnicos, sep=None, engine='python', encoding='utf-8-sig')
-        t_nombre = obtener_nombre_columna(df_tecnicos, ['nombre', 'rep', 'tec'])
-        t_rut = obtener_nombre_columna(df_tecnicos, ['rut'])
-        t_correo = obtener_nombre_columna(df_tecnicos, ['correo', 'mail'])
-        t_suc = obtener_nombre_columna(df_tecnicos, ['sucursal', 'suc'])
+# 2. Cargar archivo de Técnicos (Busca "representantes")
+df_tecnicos = cargar_archivo_excel(['rep', 'tec'])
 
-        if t_suc:
-            df_tecnicos['Sucursal_Filtro'] = df_tecnicos[t_suc].astype(str).str.strip().str.upper()
-            LISTA_SUCURSALES_SET.update(df_tecnicos['Sucursal_Filtro'].replace('NAN', np.nan).dropna().unique())
-    except:
-        df_tecnicos = pd.DataFrame()
-        t_nombre, t_rut, t_correo, t_suc = None, None, None, None
+if not df_tecnicos.empty:
+    t_nombre = obtener_nombre_columna(df_tecnicos, ['nombre', 'rep', 'tec'])
+    t_rut = obtener_nombre_columna(df_tecnicos, ['rut'])
+    t_correo = obtener_nombre_columna(df_tecnicos, ['correo', 'mail'])
+    t_suc = obtener_nombre_columna(df_tecnicos, ['sucursal', 'suc'])
+
+    if t_suc:
+        df_tecnicos['Sucursal_Filtro'] = df_tecnicos[t_suc].astype(str).str.strip().str.upper()
+        LISTA_SUCURSALES_SET.update(df_tecnicos['Sucursal_Filtro'].replace('NAN', np.nan).dropna().unique())
 else:
-    df_tecnicos = pd.DataFrame()
     t_nombre, t_rut, t_correo, t_suc = None, None, None, None
 
-# Armar lista final de sucursales
+
+# Construir lista de sucursales limpia
 lista_limpia_sucursales = sorted([s for s in LISTA_SUCURSALES_SET if s and s != 'NAN'])
 LISTA_SUCURSALES = ["TODAS"] + lista_limpia_sucursales
 
-# Inicializar filtro por defecto en SANTIAGO si existe, si no en TODAS
+# Inicializar filtro por defecto en SANTIAGO
 if "sucursal_filtro" not in st.session_state:
     if "SANTIAGO" in lista_limpia_sucursales:
         st.session_state.sucursal_filtro = "SANTIAGO"
@@ -181,14 +180,15 @@ if "sucursal_filtro" not in st.session_state:
 
 
 # ==============================================================================
-# BARRA LATERAL GLOBAL Y FILTROS (ARRIBA DEL TODO)
+# BARRA LATERAL GLOBAL Y FILTROS (INMEDIATAMENTE BAJO EL LOGO)
 # ==============================================================================
 with st.sidebar:
-    if os.path.exists("logo.png"): st.image("logo.png", width=120)
+    if os.path.exists("logo.png"): 
+        st.image("logo.png", width=120)
     
     st.markdown("### 🏢 Base Operativa")
     
-    # Asegurar que el índice no rompa la app
+    # Índice seguro para el selector
     try:
         idx_suc = LISTA_SUCURSALES.index(st.session_state.sucursal_filtro)
     except ValueError:
@@ -196,6 +196,7 @@ with st.sidebar:
         st.session_state.sucursal_filtro = "TODAS"
         
     nueva_sucursal = st.selectbox("Seleccione Sucursal:", LISTA_SUCURSALES, index=idx_suc)
+    
     if nueva_sucursal != st.session_state.sucursal_filtro:
         st.session_state.sucursal_filtro = nueva_sucursal
         st.rerun()
@@ -211,7 +212,7 @@ with st.sidebar:
 # --- APLICAR FILTROS A LAS BASES DE DATOS ---
 filtro_actual = st.session_state.sucursal_filtro
 
-# Poblar Clientes
+# Llenar Diccionario de Clientes
 if not df_clientes.empty and c_cliente is not None:
     if filtro_actual != "TODAS" and 'Sucursal_Filtro' in df_clientes.columns:
         df_c_filt = df_clientes[df_clientes['Sucursal_Filtro'] == filtro_actual]
@@ -228,16 +229,12 @@ if not df_clientes.empty and c_cliente is not None:
                 "volumen": 0
             }
 else:
-    # Respaldo de Emergencia (Fail-Safe) si el CSV falla
-    DATABASE_COMBINADA = {
-        "MOLINO CASABLANCA": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Alejandro Galaz N° 500, Casablanca", "volumen": 4850},
-        "MOLINO LA ESTAMPA": {"cliente": "MOLINO LA ESTAMPA S.A.", "rut": "90.828.000-8", "direccion": "Fermin Vivaceta 1053, Independencia", "volumen": 5500},
-        "MOLINO FERRER": {"cliente": "MOLINO FERRER HERMANOS S.A.", "rut": "76.000.000-3", "direccion": "Baquedano N° 647, San Bernardo", "volumen": 8127}
-    }
+    # Respaldo visual por si falla la lectura del Excel
+    st.sidebar.warning("⚠️ No se detectó 'base de datos .xlsx'")
 
 DATABASE_COMBINADA["OTRO"] = {"cliente": "", "rut": "", "direccion": "", "volumen": 0}
 
-# Poblar Técnicos
+# Llenar Diccionario de Técnicos
 if not df_tecnicos.empty and t_nombre is not None:
     if filtro_actual != "TODAS" and 'Sucursal_Filtro' in df_tecnicos.columns:
         df_t_filt = df_tecnicos[df_tecnicos['Sucursal_Filtro'] == filtro_actual]
@@ -252,12 +249,7 @@ if not df_tecnicos.empty and t_nombre is not None:
                 "correo": str(row[t_correo]).strip() if t_correo else ""
             }
 else:
-    # Respaldo de Emergencia (Fail-Safe) si el CSV falla
-    DATABASE_REPRESENTANTES = {
-        "Nicholas Palma": {"rut": "17.227.760-8", "correo": "nicholas.palma@rentokil-initial.com"},
-        "Vicente Madariaga": {"rut": "15.725.282-8", "correo": "vicente.madariaga@rentokil-initial.com"},
-        "Sebastián Carrillo": {"rut": "19.514.568-7", "correo": "sebastian.carrillo@rentokil-initial.com"}
-    }
+    st.sidebar.warning("⚠️ No se detectó 'Representantes técnicos .xlsx'")
 
 DATABASE_REPRESENTANTES["OTRO"] = {"rut": "", "correo": ""}
 LISTA_REPRESENTANTES = list(DATABASE_REPRESENTANTES.keys())
