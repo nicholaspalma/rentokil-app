@@ -11,6 +11,15 @@ import traceback
 import gc
 import numpy as np
 
+# --- NUEVAS LIBRERÍAS PARA IA Y ZIP ---
+import zipfile
+import json
+try:
+    import google.generativeai as genai
+    GENAI_INSTALLED = True
+except ImportError:
+    GENAI_INSTALLED = False
+
 # --- NUEVAS LIBRERÍAS PARA PLANTILLAS WORD ---
 try:
     from docxtpl import DocxTemplate, InlineImage
@@ -77,6 +86,9 @@ if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 if "word_aviso" not in st.session_state: st.session_state.word_aviso = None
+
+# Memoria para datos extraídos por la IA en Molinos
+if "mol_ai_data" not in st.session_state: st.session_state.mol_ai_data = {}
 
 # Fijar la hora por defecto una sola vez para que no salte al cambiar de menú
 if "hora_emision_default" not in st.session_state:
@@ -758,6 +770,95 @@ elif st.session_state.app_mode == "MOLINOS":
         st.info("Modo: Molinos")
 
     st.title("🏭 Informe y Certificado Molinos")
+
+    # --- NUEVO MODULO IA (ASISTENTE COPILOTO) ---
+    with st.expander("🤖 Asistente IA: Extraer datos de WhatsApp (.zip)", expanded=False):
+        if not GENAI_INSTALLED:
+            st.error("⚠️ Librería `google-generativeai` no instalada. Agrégala a requirements.txt.")
+        else:
+            st.markdown("Sube el archivo `.zip` exportado desde WhatsApp. La IA leerá las fechas, horas, dosis y tabla de PPM para pre-llenar este formulario. **Recuerda:** las fotos de evidencia debes subirlas manualmente abajo.")
+            api_key = st.text_input("Ingresa tu API Key de Gemini:", type="password", help="Necesaria para usar el motor de IA.")
+            zip_chat = st.file_uploader("Sube el archivo .zip del chat", type=["zip"])
+            
+            if st.button("🔍 Extraer Datos (Copiloto)", type="primary"):
+                if not zip_chat or not api_key:
+                    st.warning("Falta el archivo ZIP o la API Key.")
+                else:
+                    with st.spinner("Analizando chat de WhatsApp... (puede tardar unos 20 segundos)"):
+                        try:
+                            # 1. Leer el txt dentro del zip
+                            chat_text = ""
+                            with zipfile.ZipFile(zip_chat) as z:
+                                for filename in z.namelist():
+                                    if filename.endswith(".txt"):
+                                        with z.open(filename) as f:
+                                            chat_text = f.read().decode("utf-8")
+                                        break
+                            
+                            if not chat_text:
+                                st.error("No se encontró ningún archivo de texto en el ZIP.")
+                            else:
+                                # 2. Configurar Gemini
+                                genai.configure(api_key=api_key)
+                                model = genai.GenerativeModel("gemini-1.5-pro")
+                                
+                                prompt = """
+                                Eres un asistente experto en extracción de datos técnicos. 
+                                Analiza el siguiente registro de chat de WhatsApp de un proceso de fumigación.
+                                Extrae la información y devuélvela ÚNICAMENTE en el siguiente formato JSON, sin texto extra (ni markdown):
+                                
+                                {
+                                  "cliente_planta": "Nombre del cliente o molino mencionado",
+                                  "fecha_inyeccion_t0": "YYYY-MM-DD",
+                                  "hora_inyeccion_t0": "HH:MM",
+                                  "fecha_fin_ventilacion": "YYYY-MM-DD",
+                                  "hora_fin_ventilacion": "HH:MM",
+                                  "mediciones": [
+                                    ["DD-MM", "HH:MM", subt_ppm, piso1_ppm, piso2_ppm, piso3_ppm, piso4_ppm, piso5_ppm],
+                                    ...
+                                  ]
+                                }
+                                
+                                Notas para mediciones: 
+                                - Busca reportes de ppm (ej. '1 piso: 358 ppm', 'Subterráneo: 350 ppm'). 
+                                - Agrupa las mediciones de la misma hora en una sola fila. Si falta un piso en una hora, pon 0.
+                                - Si un dato no existe, déjalo vacío ("" o 0).
+                                - Mantén el orden cronológico.
+                                
+                                Chat:
+                                """
+                                # Limitar a los últimos 50000 caracteres para no saturar si es muy largo
+                                response = model.generate_content(prompt + chat_text[-50000:])
+                                json_str = response.text.replace("```json", "").replace("```", "").strip()
+                                extracted_data = json.loads(json_str)
+                                
+                                # 3. Guardar en memoria
+                                ai_d = {}
+                                try:
+                                    if extracted_data.get("fecha_inyeccion_t0"):
+                                        ai_d["f_ini"] = datetime.datetime.strptime(extracted_data["fecha_inyeccion_t0"], "%Y-%m-%d").date()
+                                    if extracted_data.get("hora_inyeccion_t0"):
+                                        ai_d["h_ini"] = datetime.datetime.strptime(extracted_data["hora_inyeccion_t0"], "%H:%M").time()
+                                    if extracted_data.get("fecha_fin_ventilacion"):
+                                        ai_d["f_ter"] = datetime.datetime.strptime(extracted_data["fecha_fin_ventilacion"], "%Y-%m-%d").date()
+                                    if extracted_data.get("hora_fin_ventilacion"):
+                                        ai_d["h_ter"] = datetime.datetime.strptime(extracted_data["hora_fin_ventilacion"], "%H:%M").time()
+                                except Exception as e: pass # Ignorar fallos de formato de fecha
+                                
+                                if extracted_data.get("cliente_planta"):
+                                    ai_d["planta_sugerida"] = extracted_data["cliente_planta"]
+                                    
+                                if extracted_data.get("mediciones") and len(extracted_data["mediciones"]) > 0:
+                                    df_ai = pd.DataFrame(extracted_data["mediciones"], columns=["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "Piso 5"])
+                                    st.session_state.df_m_mol = df_ai
+                                
+                                st.session_state.mol_ai_data = ai_d
+                                st.success("✅ ¡Datos extraídos correctamente! El formulario de abajo se ha pre-llenado. Por favor revísalos.")
+                                
+                        except Exception as e:
+                            st.error(f"Error procesando la IA: {e}")
+    # --- FIN MODULO IA ---
+
     st.subheader("I. Datos Generales")
     opcion = st.selectbox("Seleccione Planta", list(DATABASE_MOLINOS.keys()))
     d = DATABASE_MOLINOS.get(opcion, {"cliente": "", "rut": "", "direccion": "", "volumen": 0})
@@ -765,7 +866,8 @@ elif st.session_state.app_mode == "MOLINOS":
     col1, col2, col3 = st.columns(3)
     with col1:
         cliente = st.text_input("Razón Social", d.get("cliente", ""))
-        planta = st.text_input("Nombre Planta", opcion)
+        planta_default = st.session_state.mol_ai_data.get("planta_sugerida", opcion)
+        planta = st.text_input("Nombre Planta", planta_default)
     with col2:
         rut_cli = st.text_input("RUT Cliente", d.get("rut", ""))
         direccion = st.text_input("Dirección", d.get("direccion", ""))
@@ -807,11 +909,11 @@ elif st.session_state.app_mode == "MOLINOS":
     st.subheader("III. Tiempos de Fumigación")
     col_ti1, col_ti2 = st.columns(2)
     with col_ti1:
-        f_ini = st.date_input("Inicio Inyección", datetime.date.today(), key="i_m")
-        h_ini = st.time_input("Hora Inicio", datetime.time(19, 0), key="h_i_m")
+        f_ini = st.date_input("Inicio Inyección", st.session_state.mol_ai_data.get("f_ini", datetime.date.today()), key="i_m")
+        h_ini = st.time_input("Hora Inicio", st.session_state.mol_ai_data.get("h_ini", datetime.time(19, 0)), key="h_i_m")
     with col_ti2:
-        f_ter = st.date_input("Fin Ventilación", datetime.date.today() + datetime.timedelta(days=3), key="f_m")
-        h_ter = st.time_input("Hora Término", datetime.time(19, 0), key="h_t_m")
+        f_ter = st.date_input("Fin Ventilación", st.session_state.mol_ai_data.get("f_ter", datetime.date.today() + datetime.timedelta(days=3)), key="f_m")
+        h_ter = st.time_input("Hora Término", st.session_state.mol_ai_data.get("h_ter", datetime.time(19, 0)), key="h_t_m")
     horas_exp = (datetime.datetime.combine(f_ter, h_ter) - datetime.datetime.combine(f_ini, h_ini)).total_seconds() / 3600
 
     st.subheader("IV. Distribución y Dosis")
@@ -822,8 +924,10 @@ elif st.session_state.app_mode == "MOLINOS":
     dosis_final = total_g / volumen_total if volumen_total > 0 else 0
 
     st.subheader("V. Mediciones")
+    if st.session_state.mol_ai_data:
+        st.caption("🤖 *La tabla a continuación ha sido modificada por la IA. Verifica que los números coincidan con tus fotos.*")
     df_m_mol_val = st.data_editor(st.session_state.df_m_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_m")
-    fotos_meds = st.file_uploader("Evidencia de Monitoreo (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_m_m")
+    fotos_meds = st.file_uploader("Evidencia de Monitoreo (Sube las fotos aquí manualmente)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_m_m")
 
     st.subheader("VI. Anexo Fotográfico")
     fotos_anexo = st.file_uploader("Fotos Generales", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_a_m")
@@ -1068,7 +1172,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             
             pdf.t_seccion("I", "PLAN DE SELLADO Y LIMPIEZA")
             pdf.set_font("Arial", "", 10)
-            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev} a las {hora_rev} horas.")
+            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las structures a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev} a las {hora_rev} horas.")
             pdf.ln(3)
             
             if hay_obs and txt_obs:
