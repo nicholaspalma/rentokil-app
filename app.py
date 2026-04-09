@@ -77,8 +77,9 @@ if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 if "word_aviso" not in st.session_state: st.session_state.word_aviso = None
+if "sucursal_filtro" not in st.session_state: st.session_state.sucursal_filtro = "TODAS"
 
-# Fijar la hora por defecto una sola vez para que no salte al cambiar de menú
+# Fijar la hora por defecto una sola vez
 if "hora_emision_default" not in st.session_state:
     st.session_state.hora_emision_default = datetime.datetime.now().time()
 
@@ -106,77 +107,116 @@ if "df_m_est" not in st.session_state:
     cols_est = ["Fecha", "Hora"] + [f"P{i+1}" for i in range(10)]
     st.session_state.df_m_est = pd.DataFrame(d_me, columns=cols_est)
 
-# --- BASES DE DATOS DE CLIENTES ---
-DATABASE_MOLINOS = {
-    "MOLINO CASABLANCA": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Alejandro Galaz N° 500, Casablanca", "volumen": 4850},
-    "MOLINO LA ESTAMPA": {"cliente": "MOLINO LA ESTAMPA S.A.", "rut": "90.828.000-8", "direccion": "Fermin Vivaceta 1053, Independencia", "volumen": 5500},
-    "MOLINO FERRER": {"cliente": "MOLINO FERRER HERMANOS S.A.", "rut": "76.000.000-3", "direccion": "Baquedano N° 647, San Bernardo", "volumen": 8127},
-    "MOLINO EXPOSICIÓN": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Exposición N° 1657, Estación Central", "volumen": 7502},
-    "MOLINO LINDEROS": {"cliente": "MOLINO LINDEROS S.A.", "rut": "76.000.000-5", "direccion": "Villaseca Nº 1195, Buin", "volumen": 4800},
-    "MOLINO MAIPÚ": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Avenida Pajarito N° 1046, Maipú", "volumen": 4059}
-}
 
-DATABASE_ESTRUCTURAS_EXTRA = {
-    "MOLINO PUENTE ALTO": {"cliente": "MOLINO PUENTE ALTO", "rut": "76.000.000-7", "direccion": "Calle Balmaceda 27, Puente Alto, Santiago RM."},
-    "CV TRADING": {"cliente": "CV TRADING", "rut": "76.000.000-8", "direccion": "Camino Valdivia de Paine S/N, Buin"},
-    "LDA SPA": {"cliente": "LDA SPA", "rut": "76.000.000-9", "direccion": "Ruta 5 sur Km 53, N°19200 Paine"},
-    "TUCAPEL": {"cliente": "TUCAPEL", "rut": "76.000.000-0", "direccion": "Planta Lo Boza - Santiago"},
-    "EMPRESAS CAROZZI S.A": {"cliente": "EMPRESAS CAROZZI S.A", "rut": "76.000.000-K", "direccion": "Longitudinal sur Km 21, San Bernardo."},
-    "AGROCOMMERCE": {"cliente": "AGROCOMMERCE", "rut": "76.000.000-1", "direccion": "Jose Miguel Infante 8745, Renca"}
-}
+# ==============================================================================
+# LECTURA DINÁMICA DE BASES DE DATOS (CSV Y FILTRO POR SUCURSAL)
+# ==============================================================================
+DATABASE_COMBINADA = {}
+DATABASE_REPRESENTANTES = {}
+LISTA_SUCURSALES_SET = set()
 
-# --- LECTOR DINÁMICO DE CSV ---
-csv_path = None
-posibles_nombres = ["base de datos .xlsx - Hoja 1.csv", "base de datos .xlsx - Hoja1.csv", "clientes.csv"]
-for name in posibles_nombres:
-    if os.path.exists(name):
-        csv_path = name
-        break
-
-if csv_path:
-    try:
-        df_csv = pd.read_csv(csv_path, sep=None, engine='python', encoding='utf-8-sig')
-        cols = [str(c).lower() for c in df_csv.columns]
-        c_planta = df_csv.columns[next((i for i, c in enumerate(cols) if 'planta' in c or 'nombre' in c), 0)]
-        c_cliente = df_csv.columns[next((i for i, c in enumerate(cols) if 'raz' in c or 'cliente' in c or 'social' in c), 0)]
-        c_rut = df_csv.columns[next((i for i, c in enumerate(cols) if 'rut' in c), 0)]
-        c_dir = df_csv.columns[next((i for i, c in enumerate(cols) if 'dir' in c), 0)]
+# 1. Cargar Clientes
+csv_clientes = "base de datos .xlsx - Hoja1.csv"
+try:
+    if os.path.exists(csv_clientes):
+        df_clientes = pd.read_csv(csv_clientes, sep=None, engine='python', encoding='utf-8-sig')
+        cols_c = [str(c).strip().lower() for c in df_clientes.columns]
         
-        for _, row in df_csv.iterrows():
-            n_planta = str(row[c_planta]).strip()
-            if n_planta and n_planta.lower() != 'nan':
-                new_client = {
-                    "cliente": str(row[c_cliente]).strip() if c_cliente else n_planta,
-                    "rut": str(row[c_rut]).strip() if c_rut else "",
-                    "direccion": str(row[c_dir]).strip() if c_dir else "",
-                    "volumen": 0
-                }
-                DATABASE_ESTRUCTURAS_EXTRA[n_planta] = new_client
-    except: pass
+        # Identifica las columnas sin importar cómo se llamen exactamente
+        c_cliente = df_clientes.columns[next((i for i, c in enumerate(cols_c) if 'raz' in c or 'cliente' in c or 'planta' in c or 'social' in c), 0)]
+        c_rut = df_clientes.columns[next((i for i, c in enumerate(cols_c) if 'rut' in c), -1)]
+        c_dir = df_clientes.columns[next((i for i, c in enumerate(cols_c) if 'dir' in c), -1)]
+        c_suc = df_clientes.columns[next((i for i, c in enumerate(cols_c) if 'sucursal' in c), -1)]
 
-DATABASE_MOLINOS["OTRO"] = {"cliente": "", "rut": "", "direccion": "", "volumen": 0}
-DATABASE_ESTRUCTURAS_EXTRA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
+        if isinstance(c_suc, str):
+            df_clientes['Sucursal_Filtro'] = df_clientes[c_suc].astype(str).str.strip().str.upper()
+            LISTA_SUCURSALES_SET.update(df_clientes['Sucursal_Filtro'].replace('NAN', np.nan).dropna().unique())
+    else:
+        df_clientes = pd.DataFrame()
+        c_suc = -1
+except:
+    df_clientes = pd.DataFrame()
+    c_suc = -1
 
-# --- BASE COMBINADA PARA MÓDULOS GLOBALES ---
-DATABASE_COMBINADA = {**DATABASE_MOLINOS, **DATABASE_ESTRUCTURAS_EXTRA}
-if "OTRO" in DATABASE_COMBINADA:
-    del DATABASE_COMBINADA["OTRO"]
-DATABASE_COMBINADA["OTRO"] = {"cliente": "", "rut": "", "direccion": ""}
+# 2. Cargar Técnicos
+csv_tecnicos = "Representantes tecnicos .xlsx - Hoja1.csv"
+try:
+    if os.path.exists(csv_tecnicos):
+        df_tecnicos = pd.read_csv(csv_tecnicos, sep=None, engine='python', encoding='utf-8-sig')
+        cols_t = [str(c).strip().lower() for c in df_tecnicos.columns]
+        
+        t_nombre = df_tecnicos.columns[next((i for i, c in enumerate(cols_t) if 'nombre' in c or 'rep' in c), 0)]
+        t_rut = df_tecnicos.columns[next((i for i, c in enumerate(cols_t) if 'rut' in c), -1)]
+        t_correo = df_tecnicos.columns[next((i for i, c in enumerate(cols_t) if 'correo' in c or 'mail' in c), -1)]
+        t_suc = df_tecnicos.columns[next((i for i, c in enumerate(cols_t) if 'sucursal' in c), -1)]
 
-# --- NUEVA BASE DE DATOS DE REPRESENTANTES ---
-DATABASE_REPRESENTANTES = {
-    "Nicholas Palma": {"rut": "17.227.760-8", "correo": "nicholas.palma@rentokil-initial.com"},
-    "Vicente Madariaga": {"rut": "15.725.282-8", "correo": "vicente.madariaga@rentokil-initial.com"},
-    "Sebastián Carrillo": {"rut": "19.514.568-7", "correo": "sebastian.carrillo@rentokil-initial.com"},
-    "Stefano Pernigotti": {"rut": "18.085.548-3", "correo": "stefano.pernigotti@rentokil-initial.com"},
-    "Herbert Diaz": {"rut": "8.622.83-1", "correo": "herbert.diaz@rentokil-initial.com"},
-    "Juan Callofa": {"rut": "15.531.428-1", "correo": "juan.callofa@rentokil-initial.com"},
-    "Maximiliano Caro": {"rut": "20.120.770-3", "correo": "maximiliano.caro@rentokil-initial.com"},
-    "Pavel Sotomayor": {"rut": "15.331.334-2", "correo": "pavel.sotomayor@rentokil-initial.com"},
-    "Carlos Narbona": {"rut": "20.121.067-4", "correo": "carlos.narbona@rentokil-initial.com"},
-    "OTRO": {"rut": "", "correo": ""}
-}
+        if isinstance(t_suc, str):
+            df_tecnicos['Sucursal_Filtro'] = df_tecnicos[t_suc].astype(str).str.strip().str.upper()
+            LISTA_SUCURSALES_SET.update(df_tecnicos['Sucursal_Filtro'].replace('NAN', np.nan).dropna().unique())
+    else:
+        df_tecnicos = pd.DataFrame()
+        t_suc = -1
+except:
+    df_tecnicos = pd.DataFrame()
+    t_suc = -1
+
+LISTA_SUCURSALES = ["TODAS"] + sorted([s for s in LISTA_SUCURSALES_SET if s and s != 'NAN'])
+
+# --- SIDEBAR GLOBAL: SELECTOR DE SUCURSAL ---
+with st.sidebar:
+    if os.path.exists("logo.png"): st.image("logo.png", width=120)
+    st.markdown("### 🏢 Base Operativa")
+    
+    try:
+        idx_suc = LISTA_SUCURSALES.index(st.session_state.sucursal_filtro)
+    except ValueError:
+        idx_suc = 0
+        st.session_state.sucursal_filtro = "TODAS"
+        
+    nueva_sucursal = st.selectbox("Sucursal:", LISTA_SUCURSALES, index=idx_suc)
+    if nueva_sucursal != st.session_state.sucursal_filtro:
+        st.session_state.sucursal_filtro = nueva_sucursal
+        st.rerun()
+    st.markdown("---")
+
+# --- APLICAR FILTROS A LAS BASES DE DATOS ---
+filtro_actual = st.session_state.sucursal_filtro
+
+# Poblar Clientes
+if not df_clientes.empty:
+    if filtro_actual != "TODAS" and isinstance(c_suc, str):
+        df_c_filt = df_clientes[df_clientes['Sucursal_Filtro'] == filtro_actual]
+    else:
+        df_c_filt = df_clientes
+        
+    for _, row in df_c_filt.iterrows():
+        nombre_cli = str(row[c_cliente]).strip()
+        if nombre_cli and nombre_cli.lower() != 'nan':
+            DATABASE_COMBINADA[nombre_cli] = {
+                "cliente": nombre_cli,
+                "rut": str(row[c_rut]).strip() if isinstance(c_rut, str) else "",
+                "direccion": str(row[c_dir]).strip() if isinstance(c_dir, str) else "",
+                "volumen": 0
+            }
+DATABASE_COMBINADA["OTRO"] = {"cliente": "", "rut": "", "direccion": "", "volumen": 0}
+
+# Poblar Técnicos
+if not df_tecnicos.empty:
+    if filtro_actual != "TODAS" and isinstance(t_suc, str):
+        df_t_filt = df_tecnicos[df_tecnicos['Sucursal_Filtro'] == filtro_actual]
+    else:
+        df_t_filt = df_tecnicos
+        
+    for _, row in df_t_filt.iterrows():
+        nombre_tec = str(row[t_nombre]).strip()
+        if nombre_tec and nombre_tec.lower() != 'nan':
+            DATABASE_REPRESENTANTES[nombre_tec] = {
+                "rut": str(row[t_rut]).strip() if isinstance(t_rut, str) else "",
+                "correo": str(row[t_correo]).strip() if isinstance(t_correo, str) else ""
+            }
+DATABASE_REPRESENTANTES["OTRO"] = {"rut": "", "correo": ""}
 LISTA_REPRESENTANTES = list(DATABASE_REPRESENTANTES.keys())
+
 
 # --- FUNCIONES UTILITARIAS ---
 def format_fecha_es(fecha):
@@ -433,7 +473,6 @@ if st.session_state.app_mode == "HOME":
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     with st.sidebar:
-        if os.path.exists("logo.png"): st.image("logo.png", width=120)
         if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
         st.info("Modo: Notificación de Fumigación")
 
@@ -473,8 +512,8 @@ elif st.session_state.app_mode == "AVISO":
                 correo_repre_default = ""
             else:
                 repre_a = rep_a_sel
-                rut_repre_default = DATABASE_REPRESENTANTES[rep_a_sel]["rut"]
-                correo_repre_default = DATABASE_REPRESENTANTES[rep_a_sel]["correo"]
+                rut_repre_default = DATABASE_REPRESENTANTES[rep_a_sel].get("rut", "")
+                correo_repre_default = DATABASE_REPRESENTANTES[rep_a_sel].get("correo", "")
                 
         with col_r2:
             rut_repre_a = st.text_input("RUT Representante", rut_repre_default)
@@ -612,7 +651,6 @@ elif st.session_state.app_mode == "AVISO":
 # ==============================================================================
 elif st.session_state.app_mode == "VISITA":
     with st.sidebar:
-        if os.path.exists("logo.png"): st.image("logo.png", width=120)
         if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
         st.info("Modo: Visita Técnica")
 
@@ -753,14 +791,13 @@ elif st.session_state.app_mode == "VISITA":
 # ==============================================================================
 elif st.session_state.app_mode == "MOLINOS":
     with st.sidebar:
-        if os.path.exists("logo.png"): st.image("logo.png", width=120)
         if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
         st.info("Modo: Molinos")
 
     st.title("🏭 Informe y Certificado Molinos")
     st.subheader("I. Datos Generales")
-    opcion = st.selectbox("Seleccione Planta", list(DATABASE_MOLINOS.keys()))
-    d = DATABASE_MOLINOS.get(opcion, {"cliente": "", "rut": "", "direccion": "", "volumen": 0})
+    opcion = st.selectbox("Seleccione Cliente / Planta", list(DATABASE_COMBINADA.keys()))
+    d = DATABASE_COMBINADA.get(opcion, {"cliente": "", "rut": "", "direccion": "", "volumen": 0})
     
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -957,15 +994,14 @@ elif st.session_state.app_mode == "MOLINOS":
 # ==============================================================================
 elif st.session_state.app_mode == "ESTRUCTURAS":
     with st.sidebar:
-        if os.path.exists("logo.png"): st.image("logo.png", width=120)
         if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
         st.info("Modo: Estructuras")
 
     st.title("🏗️ Informe y Certificado Estructuras")
     st.subheader("I. Datos Generales")
-    LIST_CL = list(DATABASE_MOLINOS.keys()) + list(DATABASE_ESTRUCTURAS_EXTRA.keys())
-    op_e = st.selectbox("Cliente", LIST_CL)
-    db_ref = DATABASE_MOLINOS if op_e in DATABASE_MOLINOS else DATABASE_ESTRUCTURAS_EXTRA
+    LIST_CL = list(DATABASE_COMBINADA.keys())
+    op_e = st.selectbox("Cliente / Planta", LIST_CL)
+    db_ref = DATABASE_COMBINADA
     
     col_e1, col_e2, col_e3 = st.columns(3)
     with col_e1:
@@ -1182,7 +1218,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 # ==============================================================================
 elif st.session_state.app_mode == "TRABAJO":
     with st.sidebar:
-        if os.path.exists("logo.png"): st.image("logo.png", width=120)
         if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
         st.info("Modo: Informe de Trabajo")
         
@@ -1275,7 +1310,6 @@ elif st.session_state.app_mode == "TRABAJO":
 # ==============================================================================
 elif st.session_state.app_mode == "PDF2WORD":
     with st.sidebar:
-        if os.path.exists("logo.png"): st.image("logo.png", width=120)
         if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
         st.info("Modo: PDF a Word")
         
