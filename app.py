@@ -800,7 +800,7 @@ elif st.session_state.app_mode == "MOLINOS":
                             else:
                                 # 2. Configurar Gemini
                                 genai.configure(api_key=api_key)
-                                model = genai.GenerativeModel("gemini-1.5-flash")
+                                model = genai.GenerativeModel("gemini-2.5-flash")
                                 
                                 prompt = """
                                 Eres un asistente experto en extracción de datos técnicos. 
