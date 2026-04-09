@@ -29,13 +29,6 @@ try:
 except ImportError:
     pass
 
-# --- SOPORTE PDF A WORD ---
-try:
-    from pdf2docx import Converter
-    PDF2DOCX_INSTALLED = True
-except ImportError:
-    PDF2DOCX_INSTALLED = False
-
 # --- CONFIGURACIÓN INICIAL ---
 st.set_page_config(layout="wide", page_title="Rentokil Mobile PRO")
 COLOR_PRIMARIO = (227, 6, 19)
@@ -115,54 +108,69 @@ DATABASE_COMBINADA = {}
 DATABASE_REPRESENTANTES = {}
 LISTA_SUCURSALES_SET = set()
 
-# 1. Cargar Clientes
-csv_clientes = "base de datos .xlsx - Hoja1.csv"
-try:
-    if os.path.exists(csv_clientes):
-        df_clientes = pd.read_csv(csv_clientes, sep=None, engine='python', encoding='utf-8-sig')
-        cols_c = [str(c).strip().lower() for c in df_clientes.columns]
-        
-        # Identifica las columnas sin importar cómo se llamen exactamente
-        c_cliente = df_clientes.columns[next((i for i, c in enumerate(cols_c) if 'raz' in c or 'cliente' in c or 'planta' in c or 'social' in c), 0)]
-        c_rut = df_clientes.columns[next((i for i, c in enumerate(cols_c) if 'rut' in c), -1)]
-        c_dir = df_clientes.columns[next((i for i, c in enumerate(cols_c) if 'dir' in c), -1)]
-        c_suc = df_clientes.columns[next((i for i, c in enumerate(cols_c) if 'sucursal' in c), -1)]
+# Buscador seguro de columnas
+def obtener_nombre_columna(df, palabras_clave):
+    columnas_lower = [str(c).strip().lower() for c in df.columns]
+    for i, col in enumerate(columnas_lower):
+        if any(palabra in col for palabra in palabras_clave):
+            return df.columns[i]
+    return None
 
-        if isinstance(c_suc, str):
+# 1. Buscar y cargar archivo de clientes
+csv_clientes = None
+for file in os.listdir('.'):
+    if file.endswith('.csv') and ('base' in file.lower() or 'cliente' in file.lower() or 'dato' in file.lower()):
+        csv_clientes = file
+        break
+
+if csv_clientes:
+    try:
+        df_clientes = pd.read_csv(csv_clientes, sep=None, engine='python', encoding='utf-8-sig')
+        c_cliente = obtener_nombre_columna(df_clientes, ['raz', 'cliente', 'planta', 'social'])
+        c_rut = obtener_nombre_columna(df_clientes, ['rut'])
+        c_dir = obtener_nombre_columna(df_clientes, ['dir'])
+        c_suc = obtener_nombre_columna(df_clientes, ['sucursal', 'suc'])
+
+        if c_suc:
             df_clientes['Sucursal_Filtro'] = df_clientes[c_suc].astype(str).str.strip().str.upper()
             LISTA_SUCURSALES_SET.update(df_clientes['Sucursal_Filtro'].replace('NAN', np.nan).dropna().unique())
-    else:
+    except:
         df_clientes = pd.DataFrame()
-        c_suc = -1
-except:
+        c_cliente, c_rut, c_dir, c_suc = None, None, None, None
+else:
     df_clientes = pd.DataFrame()
-    c_suc = -1
+    c_cliente, c_rut, c_dir, c_suc = None, None, None, None
 
-# 2. Cargar Técnicos
-csv_tecnicos = "Representantes tecnicos .xlsx - Hoja1.csv"
-try:
-    if os.path.exists(csv_tecnicos):
+# 2. Buscar y cargar archivo de Técnicos
+csv_tecnicos = None
+for file in os.listdir('.'):
+    if file.endswith('.csv') and ('rep' in file.lower() or 'tec' in file.lower()):
+        csv_tecnicos = file
+        break
+
+if csv_tecnicos:
+    try:
         df_tecnicos = pd.read_csv(csv_tecnicos, sep=None, engine='python', encoding='utf-8-sig')
-        cols_t = [str(c).strip().lower() for c in df_tecnicos.columns]
-        
-        t_nombre = df_tecnicos.columns[next((i for i, c in enumerate(cols_t) if 'nombre' in c or 'rep' in c), 0)]
-        t_rut = df_tecnicos.columns[next((i for i, c in enumerate(cols_t) if 'rut' in c), -1)]
-        t_correo = df_tecnicos.columns[next((i for i, c in enumerate(cols_t) if 'correo' in c or 'mail' in c), -1)]
-        t_suc = df_tecnicos.columns[next((i for i, c in enumerate(cols_t) if 'sucursal' in c), -1)]
+        t_nombre = obtener_nombre_columna(df_tecnicos, ['nombre', 'rep', 'tec'])
+        t_rut = obtener_nombre_columna(df_tecnicos, ['rut'])
+        t_correo = obtener_nombre_columna(df_tecnicos, ['correo', 'mail'])
+        t_suc = obtener_nombre_columna(df_tecnicos, ['sucursal', 'suc'])
 
-        if isinstance(t_suc, str):
+        if t_suc:
             df_tecnicos['Sucursal_Filtro'] = df_tecnicos[t_suc].astype(str).str.strip().str.upper()
             LISTA_SUCURSALES_SET.update(df_tecnicos['Sucursal_Filtro'].replace('NAN', np.nan).dropna().unique())
-    else:
+    except:
         df_tecnicos = pd.DataFrame()
-        t_suc = -1
-except:
+        t_nombre, t_rut, t_correo, t_suc = None, None, None, None
+else:
     df_tecnicos = pd.DataFrame()
-    t_suc = -1
+    t_nombre, t_rut, t_correo, t_suc = None, None, None, None
 
 LISTA_SUCURSALES = ["TODAS"] + sorted([s for s in LISTA_SUCURSALES_SET if s and s != 'NAN'])
 
-# --- SIDEBAR GLOBAL: SELECTOR DE SUCURSAL ---
+# ==============================================================================
+# BARRA LATERAL GLOBAL Y FILTROS
+# ==============================================================================
 with st.sidebar:
     if os.path.exists("logo.png"): st.image("logo.png", width=120)
     st.markdown("### 🏢 Base Operativa")
@@ -173,18 +181,25 @@ with st.sidebar:
         idx_suc = 0
         st.session_state.sucursal_filtro = "TODAS"
         
-    nueva_sucursal = st.selectbox("Sucursal:", LISTA_SUCURSALES, index=idx_suc)
+    nueva_sucursal = st.selectbox("Seleccione Sucursal:", LISTA_SUCURSALES, index=idx_suc)
     if nueva_sucursal != st.session_state.sucursal_filtro:
         st.session_state.sucursal_filtro = nueva_sucursal
         st.rerun()
+        
     st.markdown("---")
+    
+    if st.session_state.app_mode != "HOME":
+        if st.button("⬅️ VOLVER AL MENÚ PRINCIPAL", use_container_width=True): 
+            st.session_state.app_mode = "HOME"
+            st.rerun()
+        st.info(f"Modo: {st.session_state.app_mode}")
 
 # --- APLICAR FILTROS A LAS BASES DE DATOS ---
 filtro_actual = st.session_state.sucursal_filtro
 
 # Poblar Clientes
-if not df_clientes.empty:
-    if filtro_actual != "TODAS" and isinstance(c_suc, str):
+if not df_clientes.empty and c_cliente is not None:
+    if filtro_actual != "TODAS" and 'Sucursal_Filtro' in df_clientes.columns:
         df_c_filt = df_clientes[df_clientes['Sucursal_Filtro'] == filtro_actual]
     else:
         df_c_filt = df_clientes
@@ -194,15 +209,23 @@ if not df_clientes.empty:
         if nombre_cli and nombre_cli.lower() != 'nan':
             DATABASE_COMBINADA[nombre_cli] = {
                 "cliente": nombre_cli,
-                "rut": str(row[c_rut]).strip() if isinstance(c_rut, str) else "",
-                "direccion": str(row[c_dir]).strip() if isinstance(c_dir, str) else "",
+                "rut": str(row[c_rut]).strip() if c_rut else "",
+                "direccion": str(row[c_dir]).strip() if c_dir else "",
                 "volumen": 0
             }
+else:
+    # Respaldo si falla la planilla de clientes
+    DATABASE_COMBINADA = {
+        "MOLINO CASABLANCA": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Alejandro Galaz N° 500, Casablanca", "volumen": 4850},
+        "MOLINO LA ESTAMPA": {"cliente": "MOLINO LA ESTAMPA S.A.", "rut": "90.828.000-8", "direccion": "Fermin Vivaceta 1053, Independencia", "volumen": 5500},
+        "MOLINO FERRER": {"cliente": "MOLINO FERRER HERMANOS S.A.", "rut": "76.000.000-3", "direccion": "Baquedano N° 647, San Bernardo", "volumen": 8127}
+    }
+
 DATABASE_COMBINADA["OTRO"] = {"cliente": "", "rut": "", "direccion": "", "volumen": 0}
 
 # Poblar Técnicos
-if not df_tecnicos.empty:
-    if filtro_actual != "TODAS" and isinstance(t_suc, str):
+if not df_tecnicos.empty and t_nombre is not None:
+    if filtro_actual != "TODAS" and 'Sucursal_Filtro' in df_tecnicos.columns:
         df_t_filt = df_tecnicos[df_tecnicos['Sucursal_Filtro'] == filtro_actual]
     else:
         df_t_filt = df_tecnicos
@@ -211,9 +234,17 @@ if not df_tecnicos.empty:
         nombre_tec = str(row[t_nombre]).strip()
         if nombre_tec and nombre_tec.lower() != 'nan':
             DATABASE_REPRESENTANTES[nombre_tec] = {
-                "rut": str(row[t_rut]).strip() if isinstance(t_rut, str) else "",
-                "correo": str(row[t_correo]).strip() if isinstance(t_correo, str) else ""
+                "rut": str(row[t_rut]).strip() if t_rut else "",
+                "correo": str(row[t_correo]).strip() if t_correo else ""
             }
+else:
+    # Respaldo si falla la planilla de técnicos
+    DATABASE_REPRESENTANTES = {
+        "Nicholas Palma": {"rut": "17.227.760-8", "correo": "nicholas.palma@rentokil-initial.com"},
+        "Vicente Madariaga": {"rut": "15.725.282-8", "correo": "vicente.madariaga@rentokil-initial.com"},
+        "Sebastián Carrillo": {"rut": "19.514.568-7", "correo": "sebastian.carrillo@rentokil-initial.com"}
+    }
+
 DATABASE_REPRESENTANTES["OTRO"] = {"rut": "", "correo": ""}
 LISTA_REPRESENTANTES = list(DATABASE_REPRESENTANTES.keys())
 
@@ -445,7 +476,7 @@ if st.session_state.app_mode == "HOME":
     
     st.markdown("---")
     
-    c1, c2, c3, c_new = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     with c1:
         if st.button("🏭 MOLINOS\n(Técnico y Cert.)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "MOLINOS"; st.rerun()
@@ -455,27 +486,20 @@ if st.session_state.app_mode == "HOME":
     with c3:
         if st.button("📋 VISITA TÉCNICA\n(Evaluación Previa)", use_container_width=True, type="primary"):
             st.session_state.app_mode = "VISITA"; st.rerun()
-    with c_new:
-        if st.button("📢 NOTIFICACIÓN\n(Aviso al Seremi)", use_container_width=True, type="primary"):
-            st.session_state.app_mode = "AVISO"; st.rerun()
             
     st.write("")
     c4, c5 = st.columns(2)
     with c4:
+        if st.button("📢 NOTIFICACIÓN\n(Aviso al Seremi)", use_container_width=True, type="secondary"):
+            st.session_state.app_mode = "AVISO"; st.rerun()
+    with c5:
         if st.button("📸 INFORME DE TRABAJO\n(Fotos a Pantalla Completa)", use_container_width=True, type="secondary"):
             st.session_state.app_mode = "TRABAJO"; st.rerun()
-    with c5:
-        if st.button("📄 CONVERTIR PDF A WORD\n(Transforma archivos)", use_container_width=True, type="secondary"):
-            st.session_state.app_mode = "PDF2WORD"; st.rerun()
 
 # ==============================================================================
 # LÓGICA: AVISO DE FUMIGACIÓN 
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
-    with st.sidebar:
-        if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
-        st.info("Modo: Notificación de Fumigación")
-
     st.title("📢 Generador de Aviso al Seremi")
     
     if not DOCXTPL_INSTALLED:
@@ -650,10 +674,6 @@ elif st.session_state.app_mode == "AVISO":
 # LÓGICA: VISITA TÉCNICA 
 # ==============================================================================
 elif st.session_state.app_mode == "VISITA":
-    with st.sidebar:
-        if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
-        st.info("Modo: Visita Técnica")
-
     st.title("📋 Visita Técnica Pre-Fumigación")
     
     st.subheader("📸 I. Portada")
@@ -790,10 +810,6 @@ elif st.session_state.app_mode == "VISITA":
 # LÓGICA: MOLINOS
 # ==============================================================================
 elif st.session_state.app_mode == "MOLINOS":
-    with st.sidebar:
-        if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
-        st.info("Modo: Molinos")
-
     st.title("🏭 Informe y Certificado Molinos")
     st.subheader("I. Datos Generales")
     opcion = st.selectbox("Seleccione Cliente / Planta", list(DATABASE_COMBINADA.keys()))
@@ -993,10 +1009,6 @@ elif st.session_state.app_mode == "MOLINOS":
 # LÓGICA: ESTRUCTURAS
 # ==============================================================================
 elif st.session_state.app_mode == "ESTRUCTURAS":
-    with st.sidebar:
-        if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
-        st.info("Modo: Estructuras")
-
     st.title("🏗️ Informe y Certificado Estructuras")
     st.subheader("I. Datos Generales")
     LIST_CL = list(DATABASE_COMBINADA.keys())
@@ -1217,10 +1229,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 # LÓGICA: INFORME DE TRABAJO
 # ==============================================================================
 elif st.session_state.app_mode == "TRABAJO":
-    with st.sidebar:
-        if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
-        st.info("Modo: Informe de Trabajo")
-        
     st.title("📸 Informe de Trabajo (Pantalla Completa)")
     st.markdown("Este módulo genera un PDF oficial. La primera imagen acompaña la portada, las demás ocupan la hoja completa.")
     
@@ -1305,45 +1313,6 @@ elif st.session_state.app_mode == "TRABAJO":
         else:
             st.warning("Debes subir al menos una foto para generar el informe de trabajo.")
 
-# ==============================================================================
-# LÓGICA: PDF A WORD
-# ==============================================================================
-elif st.session_state.app_mode == "PDF2WORD":
-    with st.sidebar:
-        if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): st.session_state.app_mode = "HOME"; st.rerun()
-        st.info("Modo: PDF a Word")
-        
-    st.title("📄 Convertidor Mágico: PDF a Word")
-    
-    if not PDF2DOCX_INSTALLED:
-        st.error("⚠️ Falta una librería en el servidor.")
-    else:
-        st.markdown("Sube cualquier PDF tal cual lo tienes en el celular. El sistema internamente generará una copia idéntica en Word (`.docx`). **No necesitas cambiar ningún nombre, la aplicación lo hace por ti.**")
-        uploaded_pdf = st.file_uploader("Selecciona tu documento", type=['pdf'])
-        
-        if uploaded_pdf and st.button("🔄 CONVERTIR A WORD", use_container_width=True, type="primary"):
-            with st.spinner("Convirtiendo documento... Esto puede tardar unos segundos..."):
-                try:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as t_pdf:
-                        t_pdf.write(uploaded_pdf.read())
-                        pdf_path = t_pdf.name
-                    
-                    docx_path = pdf_path.replace(".pdf", ".docx")
-                    cv = Converter(pdf_path)
-                    cv.convert(docx_path)
-                    cv.close()
-                    
-                    original_name = uploaded_pdf.name.replace(".pdf", "")
-                    with open(docx_path, "rb") as docx_file:
-                        st.download_button(
-                            label="✅ DESCARGAR DOCUMENTO WORD",
-                            data=docx_file.read(),
-                            file_name=f"{original_name}.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            use_container_width=True
-                        )
-                except Exception as e:
-                    st.error(f"Hubo un error durante la conversión. Asegúrate de que el PDF no esté protegido con clave. Detalle: {e}")
 
 # ==============================================================================
 # BOTONES DE DESCARGA GLOBALES
