@@ -70,7 +70,6 @@ if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 if "word_aviso" not in st.session_state: st.session_state.word_aviso = None
-if "sucursal_filtro" not in st.session_state: st.session_state.sucursal_filtro = "TODAS"
 
 # Fijar la hora por defecto una sola vez
 if "hora_emision_default" not in st.session_state:
@@ -102,13 +101,12 @@ if "df_m_est" not in st.session_state:
 
 
 # ==============================================================================
-# LECTURA DINÁMICA DE BASES DE DATOS (CSV Y FILTRO POR SUCURSAL)
+# LECTURA DINÁMICA DE BASES DE DATOS (A PRUEBA DE FALLOS)
 # ==============================================================================
 DATABASE_COMBINADA = {}
 DATABASE_REPRESENTANTES = {}
 LISTA_SUCURSALES_SET = set()
 
-# Buscador seguro de columnas
 def obtener_nombre_columna(df, palabras_clave):
     columnas_lower = [str(c).strip().lower() for c in df.columns]
     for i, col in enumerate(columnas_lower):
@@ -125,6 +123,7 @@ for file in os.listdir('.'):
 
 if csv_clientes:
     try:
+        # Usamos sep=None para que detecte automáticamente si es coma o punto y coma
         df_clientes = pd.read_csv(csv_clientes, sep=None, engine='python', encoding='utf-8-sig')
         c_cliente = obtener_nombre_columna(df_clientes, ['raz', 'cliente', 'planta', 'social'])
         c_rut = obtener_nombre_columna(df_clientes, ['rut'])
@@ -134,7 +133,8 @@ if csv_clientes:
         if c_suc:
             df_clientes['Sucursal_Filtro'] = df_clientes[c_suc].astype(str).str.strip().str.upper()
             LISTA_SUCURSALES_SET.update(df_clientes['Sucursal_Filtro'].replace('NAN', np.nan).dropna().unique())
-    except:
+    except Exception as e:
+        st.error(f"Error interno leyendo clientes: {e}")
         df_clientes = pd.DataFrame()
         c_cliente, c_rut, c_dir, c_suc = None, None, None, None
 else:
@@ -166,15 +166,29 @@ else:
     df_tecnicos = pd.DataFrame()
     t_nombre, t_rut, t_correo, t_suc = None, None, None, None
 
-LISTA_SUCURSALES = ["TODAS"] + sorted([s for s in LISTA_SUCURSALES_SET if s and s != 'NAN'])
+# Armar lista final de sucursales
+lista_limpia_sucursales = sorted([s for s in LISTA_SUCURSALES_SET if s and s != 'NAN'])
+LISTA_SUCURSALES = ["TODAS"] + lista_limpia_sucursales
+
+# Inicializar filtro por defecto en SANTIAGO si existe, si no en TODAS
+if "sucursal_filtro" not in st.session_state:
+    if "SANTIAGO" in lista_limpia_sucursales:
+        st.session_state.sucursal_filtro = "SANTIAGO"
+    elif lista_limpia_sucursales:
+        st.session_state.sucursal_filtro = lista_limpia_sucursales[0]
+    else:
+        st.session_state.sucursal_filtro = "TODAS"
+
 
 # ==============================================================================
-# BARRA LATERAL GLOBAL Y FILTROS
+# BARRA LATERAL GLOBAL Y FILTROS (ARRIBA DEL TODO)
 # ==============================================================================
 with st.sidebar:
     if os.path.exists("logo.png"): st.image("logo.png", width=120)
+    
     st.markdown("### 🏢 Base Operativa")
     
+    # Asegurar que el índice no rompa la app
     try:
         idx_suc = LISTA_SUCURSALES.index(st.session_state.sucursal_filtro)
     except ValueError:
@@ -214,7 +228,7 @@ if not df_clientes.empty and c_cliente is not None:
                 "volumen": 0
             }
 else:
-    # Respaldo si falla la planilla de clientes
+    # Respaldo de Emergencia (Fail-Safe) si el CSV falla
     DATABASE_COMBINADA = {
         "MOLINO CASABLANCA": {"cliente": "COMPAÑÍA MOLINERA SAN CRISTOBAL S.A.", "rut": "76.000.000-1", "direccion": "Alejandro Galaz N° 500, Casablanca", "volumen": 4850},
         "MOLINO LA ESTAMPA": {"cliente": "MOLINO LA ESTAMPA S.A.", "rut": "90.828.000-8", "direccion": "Fermin Vivaceta 1053, Independencia", "volumen": 5500},
@@ -238,7 +252,7 @@ if not df_tecnicos.empty and t_nombre is not None:
                 "correo": str(row[t_correo]).strip() if t_correo else ""
             }
 else:
-    # Respaldo si falla la planilla de técnicos
+    # Respaldo de Emergencia (Fail-Safe) si el CSV falla
     DATABASE_REPRESENTANTES = {
         "Nicholas Palma": {"rut": "17.227.760-8", "correo": "nicholas.palma@rentokil-initial.com"},
         "Vicente Madariaga": {"rut": "15.725.282-8", "correo": "vicente.madariaga@rentokil-initial.com"},
@@ -1179,7 +1193,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
             c_text = (
                 "EVALUACIÓN DE EFICACIA:\n"
-                f"El análisis de los registros de monitoreo confirma que la concentración de Fosfina (PH3) se mantuvo por sobre el umbral crítico de 300 PPM durante las {h_exp_e:.1f} horas de exposición efectiva. Esta saturación constante garantiza una penetración total del gas en los puntos críticos de las estructuras, {t_efic}\n\n"
+                f"El análisis de los registros de monitoreo confirma que la concentración de Fosfina (PH3) se mantuvo por sobre el umbral crítico de 300 PPM durante las {h_exp_e:.1f} horas de exposición efectiva. Esta saturación constante garantiza una penetración total del gas en los puntos críticos de las structures, {t_efic}\n\n"
                 "CERTIFICACIÓN:\n"
                 "En consecuencia, el servicio se declara CONFORME, validando la bio-disponibilidad del ingrediente activo y el cumplimiento de los estándares técnicos de Rentokil Initial Chile."
             )
