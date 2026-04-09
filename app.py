@@ -70,8 +70,7 @@ if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 if "word_aviso" not in st.session_state: st.session_state.word_aviso = None
-if "pdf_aviso" not in st.session_state: st.session_state.pdf_aviso = None
-if "sucursal_filtro" not in st.session_state: st.session_state.sucursal_filtro = "TODAS"
+if "sucursal_filtro" not in st.session_state: st.session_state.sucursal_filtro = "SANTIAGO"
 
 # Fijar la hora por defecto una sola vez
 if "hora_emision_default" not in st.session_state:
@@ -91,7 +90,7 @@ if "df_m_mol" not in st.session_state:
         for h in ["19:00", "00:00", "07:00", "13:00"]: d_m.append([f_s, h, 300, 310, 320, 305, 300, 290])
     st.session_state.df_m_mol = pd.DataFrame(d_m, columns=["Fecha", "Hora", "Subt.", "Piso 1", "Piso 2", "Piso 3", "Piso 4", "Piso 5"])
 
-# Tablas Estructuras 
+# Tablas Estructuras (10 PUNTOS AHORA)
 if "df_d_est" not in st.session_state:
     st.session_state.df_d_est = pd.DataFrame([{"Estructura (Nombre/N°)": "Silo 1", "Volumen (m3)": 100, "Cant. Placas": 0, "Cant. Mini-Ropes": 0, "Cant. Phostoxin": 0}])
 if "nom_p" not in st.session_state: st.session_state.nom_p = [f"Punto {i+1}" for i in range(10)]
@@ -103,7 +102,7 @@ if "df_m_est" not in st.session_state:
 
 
 # ==============================================================================
-# LECTURA DINÁMICA DE EXCEL (.XLSX) Y FILTRO POR SUCURSAL
+# LECTURA DINÁMICA DE EXCEL (.XLSX) Y CSV A PRUEBA DE FALLOS
 # ==============================================================================
 DATABASE_COMBINADA = {}
 DATABASE_REPRESENTANTES = {}
@@ -128,7 +127,7 @@ def cargar_archivo_excel(palabras_en_nombre):
                 elif file.endswith('.csv'):
                     return pd.read_csv(file, sep=None, engine='python', encoding='utf-8-sig')
             except Exception as e:
-                st.error(f"⚠️ Error intentando leer el archivo {file}: {e}")
+                st.error(f"⚠️ Error leyendo {file}: {e}")
                 return pd.DataFrame()
     return pd.DataFrame()
 
@@ -166,25 +165,24 @@ else:
 lista_limpia_sucursales = sorted([s for s in LISTA_SUCURSALES_SET if s and s != 'NAN'])
 LISTA_SUCURSALES = ["TODAS"] + lista_limpia_sucursales
 
-# Inicializar filtro por defecto en SANTIAGO
-if "sucursal_filtro" not in st.session_state:
-    if "SANTIAGO" in lista_limpia_sucursales:
-        st.session_state.sucursal_filtro = "SANTIAGO"
-    elif lista_limpia_sucursales:
-        st.session_state.sucursal_filtro = lista_limpia_sucursales[0]
-    else:
-        st.session_state.sucursal_filtro = "TODAS"
+# Forzar el valor por defecto si la lista de sucursales se generó
+if "SANTIAGO" in lista_limpia_sucursales and st.session_state.sucursal_filtro not in LISTA_SUCURSALES:
+    st.session_state.sucursal_filtro = "SANTIAGO"
+elif lista_limpia_sucursales and st.session_state.sucursal_filtro not in LISTA_SUCURSALES:
+    st.session_state.sucursal_filtro = lista_limpia_sucursales[0]
+elif not lista_limpia_sucursales:
+    st.session_state.sucursal_filtro = "TODAS"
 
 
 # ==============================================================================
-# BARRA LATERAL (INDICADOR GLOBAL)
+# BARRA LATERAL (SOLO INDICADOR DE ESTADO)
 # ==============================================================================
 with st.sidebar:
     if os.path.exists("logo.png"): 
         st.image("logo.png", width=120)
     
     if st.session_state.app_mode != "HOME":
-        st.info(f"📍 Base: **{st.session_state.sucursal_filtro}**")
+        st.info(f"📍 Base Operativa: **{st.session_state.sucursal_filtro}**")
         st.markdown("---")
         if st.button("⬅️ VOLVER AL MENÚ", use_container_width=True): 
             st.session_state.app_mode = "HOME"
@@ -213,7 +211,9 @@ if not df_clientes.empty and c_cliente is not None:
                 "volumen": 0
             }
 else:
-    st.sidebar.warning("⚠️ Planilla 'Clientes' no detectada")
+    # Respaldo visual por si falla la lectura del Excel
+    if st.session_state.app_mode != "HOME":
+        st.sidebar.warning("⚠️ No se detectó planilla de clientes válida")
 
 DATABASE_COMBINADA["OTRO"] = {"cliente": "", "rut": "", "direccion": "", "volumen": 0}
 
@@ -232,7 +232,8 @@ if not df_tecnicos.empty and t_nombre is not None:
                 "correo": str(row[t_correo]).strip() if t_correo else ""
             }
 else:
-    st.sidebar.warning("⚠️ Planilla 'Técnicos' no detectada")
+    if st.session_state.app_mode != "HOME":
+        st.sidebar.warning("⚠️ No se detectó planilla de técnicos válida")
 
 DATABASE_REPRESENTANTES["OTRO"] = {"rut": "", "correo": ""}
 LISTA_REPRESENTANTES = list(DATABASE_REPRESENTANTES.keys())
@@ -427,32 +428,6 @@ class CertificadoPDF(FPDF):
             self.ln()
         self.ln(4)
 
-class AvisoPDF(FPDF):
-    def header(self):
-        if os.path.exists('logo.png'):
-            try: self.image('logo.png', 10, 8, 33)
-            except: pass
-        self.set_font("Arial", "B", 14); self.set_text_color(*COLOR_PRIMARIO)
-        self.cell(0, 8, "AVISO DE FUMIGACIÓN", ln=1, align="R")
-        self.set_font("Arial", "I", 8); self.set_text_color(100, 100, 100)
-        self.cell(0, 5, "RENTOKIL INITIAL CHILE SPA", ln=1, align="R"); self.ln(10)
-
-    def footer(self):
-        self.set_y(-15); self.set_font("Arial", "I", 8); self.set_text_color(150, 150, 150)
-        self.cell(0, 10, f"Documento Oficial Rentokil Initial Chile SpA", align="C")
-
-    def section_title(self, title):
-        self.ln(4); self.set_font("Arial", "B", 10); self.set_fill_color(*COLOR_PRIMARIO); self.set_text_color(255, 255, 255)
-        self.cell(0, 6, f"  {title}", ln=1, fill=True); self.set_text_color(0, 0, 0); self.ln(2)
-
-    def kv_row(self, key1, val1, key2=None, val2=None):
-        self.set_font("Arial", "B", 9); self.cell(35, 6, f"{key1}:", border=0)
-        self.set_font("Arial", "", 9); self.cell(60, 6, str(val1), border=0)
-        if key2:
-            self.set_font("Arial", "B", 9); self.cell(35, 6, f"{key2}:", border=0)
-            self.set_font("Arial", "", 9); self.cell(60, 6, str(val2), border=0)
-        self.ln()
-
 # ==============================================================================
 # PANTALLA DE INICIO (HUB PRINCIPAL)
 # ==============================================================================
@@ -462,10 +437,10 @@ if st.session_state.app_mode == "HOME":
     with col_logo2:
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
         
-        # --- SELECTOR DE SUCURSAL CENTRADO ---
+        # --- SELECTOR DE SUCURSAL CENTRADO EN PANTALLA PRINCIPAL ---
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("""
-            <div style='text-align: center; color: #666; font-size: 1.1em; font-weight: bold; margin-bottom: 8px;'>
+            <div style='text-align: center; color: #E30613; font-size: 1.2em; font-weight: bold; margin-bottom: 5px;'>
                 📍 SELECCIONE SU BASE OPERATIVA
             </div>
         """, unsafe_allow_html=True)
@@ -481,7 +456,7 @@ if st.session_state.app_mode == "HOME":
             st.rerun()
             
         st.markdown("<br>", unsafe_allow_html=True)
-        # -------------------------------------
+        # -------------------------------------------------------------
         
     st.markdown("---")
     
@@ -506,197 +481,178 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "TRABAJO"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN 
+# LÓGICA: AVISO DE FUMIGACIÓN (WORD ORIGINAL RESTAURADO)
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     st.title("📢 Generador de Aviso al Seremi")
     
     if not DOCXTPL_INSTALLED:
-        st.error("⚠️ Para usar el formato Word, debes tener `docxtpl` en tu requirements.txt.")
+        st.error("⚠️ Para usar este módulo, debes agregar la palabra `docxtpl` a tu archivo `requirements.txt` en GitHub y esperar 2 minutos a que se instale.")
+    else:
+        st.markdown("Asegúrate de haber subido el archivo **`plantilla_aviso.docx`** a tu GitHub con las etiquetas correspondientes.")
         
-    st.markdown("Completa los datos para generar el documento oficial en **PDF** y en **WORD**.")
-    
-    st.subheader("📝 I. Datos de Emisión y Cliente")
-    op_a = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()))
-    db_a = DATABASE_COMBINADA
-    
-    col_a1, col_a2, col_a3 = st.columns(3)
-    with col_a1:
-        cliente_a = st.text_input("Razón Social", db_a[op_a].get("cliente", op_a))
-        rut_cliente_a = st.text_input("RUT Cliente", db_a[op_a].get("rut", ""))
-        contacto_a = st.text_input("Atención a (Contacto)", "Jefe de Planta")
-    with col_a2:
-        dir_a = st.text_input("Dirección", db_a[op_a].get("direccion", ""))
-        comuna_a = st.text_input("Comuna", "")
-        tel_cliente_a = st.text_input("Teléfono Cliente", "")
-    with col_a3:
-        fecha_emision_a = st.date_input("Fecha de emisión del documento", datetime.date.today())
-        fecha_visita_a = st.date_input("Fecha de Visita Previa", datetime.date.today() - datetime.timedelta(days=1))
-        hora_emision_a = st.time_input("Hora de Emisión (Ajustar si es necesario)", st.session_state.hora_emision_default)
-        st.session_state.hora_emision_default = hora_emision_a
-
-    st.subheader("👨‍💼 II. Datos del Representante (Rentokil)")
-    col_r1, col_r2, col_r3 = st.columns(3)
-    with col_r1:
-        rep_a_sel = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES, key="rep_sel_a")
-        if rep_a_sel == "OTRO":
-            repre_a = st.text_input("Nombre Representante Manual:", key="rep_man_a")
-            rut_repre_default = ""
-            correo_repre_default = ""
-        else:
-            repre_a = rep_a_sel
-            rut_repre_default = DATABASE_REPRESENTANTES[rep_a_sel].get("rut", "")
-            correo_repre_default = DATABASE_REPRESENTANTES[rep_a_sel].get("correo", "")
-            
-    with col_r2:
-        rut_repre_a = st.text_input("RUT Representante", rut_repre_default)
-    with col_r3:
-        correo_repre_a = st.text_input("Correo Representante", correo_repre_default)
-
-    st.subheader("☣️ III. Detalles Técnicos de la Fumigación")
-    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
-    with col_f1:
-        fecha_fumi_a = st.date_input("Fecha de Fumigación", datetime.date.today() + datetime.timedelta(days=2))
-        tipo_fum_a = st.selectbox("Tipo de Fumigación", ["Preventiva", "Curativa"])
-    with col_f2:
-        hora_ini_a = st.time_input("Hora Inicio Inyección", datetime.time(9, 0))
-        hora_ter_a = st.time_input("Hora Fin Ventilación", datetime.time(18, 0))
-    with col_f3:
-        horas_exp_a = st.number_input("Horas de Exposición", value=72)
-        dosis_a = st.text_input("Dosis Planificada", "3 g/m3")
-    with col_f4:
-        estructura_lote_a = st.text_input("Estructura / Lote a Tratar", "Lote 1")
-        areas_a = st.text_input("Área General", "Bodega Principal")
+        st.subheader("📝 I. Datos de Emisión y Cliente")
+        op_a = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()))
+        db_a = DATABASE_COMBINADA
         
-    col_f5, col_f6, col_f7 = st.columns(3)
-    with col_f5:
-        producto_a = st.text_input("Mercadería / Producto a Tratar (Cultivo)", "Nueces de exportación")
-    with col_f6:
-        quimico_a = st.selectbox("Químico (Fumigante)", ["Fosfina (Fosfuro de Aluminio)", "Fosfuro de Magnesio", "Ambos (Fosfuro de Aluminio y Magnesio)"])
-    with col_f7:
-        if tipo_fum_a == "Curativa":
-            plaga_a = st.text_input("Plaga Detectada", "Tribolium confusum")
-        else:
-            plaga_a = ""
-            st.text_input("Plaga Detectada", "N/A (Tratamiento Preventivo)", disabled=True)
+        col_a1, col_a2, col_a3 = st.columns(3)
+        with col_a1:
+            cliente_a = st.text_input("Razón Social", db_a[op_a].get("cliente", op_a))
+            rut_cliente_a = st.text_input("RUT Cliente", db_a[op_a].get("rut", ""))
+            contacto_a = st.text_input("Atención a (Contacto)", "Jefe de Planta")
+        with col_a2:
+            dir_a = st.text_input("Dirección", db_a[op_a].get("direccion", ""))
+            comuna_a = st.text_input("Comuna", "")
+            tel_cliente_a = st.text_input("Teléfono Cliente", "")
+        with col_a3:
+            fecha_emision_a = st.date_input("Fecha de emisión del documento", datetime.date.today())
+            fecha_visita_a = st.date_input("Fecha de Visita Previa", datetime.date.today() - datetime.timedelta(days=1))
+            hora_emision_a = st.time_input("Hora de Emisión (Ajustar si es necesario)", st.session_state.hora_emision_default)
+            st.session_state.hora_emision_default = hora_emision_a
 
-    st.subheader("🛠️ IV. Modalidad de Tratamiento")
-    modalidad_a = st.selectbox("Seleccione la modalidad para marcar en el documento", 
-                               ["Lote bajo carpa", "Silos", "Estructuras", "Contenedores", "Otros"])
-    
-    texto_otro_a = "____________________"
-    if modalidad_a == "Otros":
-        texto_otro_a = st.text_input("Especifique qué otro tratamiento:")
+        st.subheader("👨‍💼 II. Datos del Representante (Rentokil)")
+        col_r1, col_r2, col_r3 = st.columns(3)
+        with col_r1:
+            rep_a_sel = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES, key="rep_sel_a")
+            if rep_a_sel == "OTRO":
+                repre_a = st.text_input("Nombre Representante Manual:", key="rep_man_a")
+                rut_repre_default = ""
+                correo_repre_default = ""
+            else:
+                repre_a = rep_a_sel
+                rut_repre_default = DATABASE_REPRESENTANTES[rep_a_sel].get("rut", "")
+                correo_repre_default = DATABASE_REPRESENTANTES[rep_a_sel].get("correo", "")
+                
+        with col_r2:
+            rut_repre_a = st.text_input("RUT Representante", rut_repre_default)
+        with col_r3:
+            correo_repre_a = st.text_input("Correo Representante", correo_repre_default)
 
-    st.subheader("🗺️ V. Mapa y Firma")
-    col_img1, col_img2 = st.columns(2)
-    with col_img1:
-        mapa_file = st.file_uploader("Sube el Mapa de Georreferencia", type=["png", "jpg", "jpeg", "heic"])
-    with col_img2:
-        firma_aviso = st.file_uploader("Firma del Responsable Rentokil", type=["png", "jpg", "jpeg", "heic"])
+        st.subheader("☣️ III. Detalles Técnicos de la Fumigación")
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+        with col_f1:
+            fecha_fumi_a = st.date_input("Fecha de Fumigación", datetime.date.today() + datetime.timedelta(days=2))
+            tipo_fum_a = st.selectbox("Tipo de Fumigación", ["Preventiva", "Curativa"])
+        with col_f2:
+            hora_ini_a = st.time_input("Hora Inicio Inyección", datetime.time(9, 0))
+            hora_ter_a = st.time_input("Hora Fin Ventilación", datetime.time(18, 0))
+        with col_f3:
+            horas_exp_a = st.number_input("Horas de Exposición", value=72)
+            dosis_a = st.text_input("Dosis Planificada", "3 g/m3")
+        with col_f4:
+            estructura_lote_a = st.text_input("Estructura / Lote a Tratar", "Lote 1")
+            areas_a = st.text_input("Área General", "Bodega Principal")
+            
+        col_f5, col_f6, col_f7 = st.columns(3)
+        with col_f5:
+            producto_a = st.text_input("Mercadería / Producto a Tratar (Cultivo)", "Nueces de exportación")
+        with col_f6:
+            quimico_a = st.selectbox("Químico (Fumigante)", ["Fosfina (Fosfuro de Aluminio)", "Fosfuro de Magnesio", "Ambos (Fosfuro de Aluminio y Magnesio)"])
+        with col_f7:
+            if tipo_fum_a == "Curativa":
+                plaga_a = st.text_input("Plaga Detectada", "Tribolium confusum")
+            else:
+                plaga_a = ""
+                st.text_input("Plaga Detectada", "N/A (Tratamiento Preventivo)", disabled=True)
 
-    if st.button("🚀 PROCESAR Y GENERAR DOCUMENTOS (WORD Y PDF)", use_container_width=True, type="primary"):
-        # 1. GENERAR EL PDF (Independiente de la plantilla Word)
-        try:
-            pdf_a = AvisoPDF()
-            pdf_a.add_page()
-            
-            pdf_a.section_title("I. DATOS DE EMISIÓN Y CLIENTE")
-            pdf_a.kv_row("Fecha Emisión", format_fecha_es(fecha_emision_a), "Hora Emisión", hora_emision_a.strftime("%H:%M"))
-            pdf_a.kv_row("Visita Previa", format_fecha_es(fecha_visita_a))
-            pdf_a.kv_row("Razón Social", cliente_a, "RUT Cliente", rut_cliente_a)
-            pdf_a.kv_row("Atención a", contacto_a, "Teléfono", tel_cliente_a)
-            pdf_a.kv_row("Dirección", dir_a, "Comuna", comuna_a)
-            
-            pdf_a.section_title("II. DATOS DEL REPRESENTANTE RENTOKIL")
-            pdf_a.kv_row("Nombre", repre_a, "RUT", rut_repre_a)
-            pdf_a.kv_row("Correo", correo_repre_a)
-            
-            pdf_a.section_title("III. DETALLES TÉCNICOS DE FUMIGACIÓN")
-            pdf_a.kv_row("Fecha Tratamiento", format_fecha_es(fecha_fumi_a), "Tipo", tipo_fum_a)
-            pdf_a.kv_row("Hora Inicio", hora_ini_a.strftime("%H:%M"), "Hora Término", hora_ter_a.strftime("%H:%M"))
-            pdf_a.kv_row("Horas Exposición", f"{horas_exp_a} Hrs", "Dosis", dosis_a)
-            pdf_a.kv_row("Estructura/Lote", estructura_lote_a, "Área General", areas_a)
-            pdf_a.kv_row("Producto", producto_a, "Químico", quimico_a[:25])
-            if plaga_a: pdf_a.kv_row("Plaga Detectada", plaga_a)
-            
-            pdf_a.section_title("IV. MODALIDAD DE TRATAMIENTO")
-            pdf_a.set_font("Arial", "", 9)
-            pdf_a.cell(0, 6, f"Modalidad seleccionada: {modalidad_a}", ln=1)
-            if modalidad_a == "Otros": pdf_a.cell(0, 6, f"Especificación: {texto_otro_a}", ln=1)
-            
-            pdf_a.section_title("V. REGISTROS ADJUNTOS")
-            y_img = pdf_a.get_y()
-            if mapa_file:
-                mapa_path, w, h = procesar_imagen_full(mapa_file)
-                if mapa_path:
-                    pdf_a.image(mapa_path, x=10, y=y_img, w=80)
-                    os.remove(mapa_path)
-            if firma_aviso:
-                firma_path = procesar_firma(firma_aviso)
-                if firma_path:
-                    pdf_a.image(firma_path, x=130, y=y_img, w=50)
-                    os.remove(firma_path)
+        st.subheader("🛠️ IV. Modalidad de Tratamiento")
+        modalidad_a = st.selectbox("Seleccione la modalidad para marcar en el documento", 
+                                   ["Lote bajo carpa", "Silos", "Estructuras", "Contenedores", "Otros"])
+        
+        texto_otro_a = "____________________"
+        if modalidad_a == "Otros":
+            texto_otro_a = st.text_input("Especifique qué otro tratamiento:")
+
+        st.subheader("🗺️ V. Mapa y Firma")
+        col_img1, col_img2 = st.columns(2)
+        with col_img1:
+            mapa_file = st.file_uploader("Sube el Mapa de Georreferencia", type=["png", "jpg", "jpeg", "heic"])
+        with col_img2:
+            firma_aviso = st.file_uploader("Firma del Responsable Rentokil", type=["png", "jpg", "jpeg", "heic"])
+
+        if st.button("🚀 GENERAR AVISO AL SEREMI (WORD)", use_container_width=True, type="primary"):
+            if not os.path.exists("plantilla_aviso.docx"):
+                st.error("❌ No se encontró el archivo `plantilla_aviso.docx`. Por favor, súbelo a GitHub en la misma carpeta.")
+            else:
+                try:
+                    doc = DocxTemplate("plantilla_aviso.docx")
                     
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf_a:
-                pdf_a.output(tmp_pdf_a.name)
-                with open(tmp_pdf_a.name, "rb") as f_pdf: st.session_state.pdf_aviso = f_pdf.read()
-        except Exception as e:
-            st.error(f"Error generando PDF: {e}")
-
-        # 2. GENERAR EL WORD (Si existe la plantilla)
-        if os.path.exists("plantilla_aviso.docx") and DOCXTPL_INSTALLED:
-            try:
-                doc = DocxTemplate("plantilla_aviso.docx")
-                check_on = "☒"
-                check_off = "☐"
-                context = {
-                    'fecha_emision': format_fecha_es(fecha_emision_a), 'visita_previa': format_fecha_es(fecha_visita_a),
-                    'hora_emision': hora_emision_a.strftime("%H:%M"), 'cliente': cliente_a, 'rut_cliente': rut_cliente_a,
-                    'tel_cliente': tel_cliente_a, 'comuna': comuna_a, 'direccion': dir_a, 'contacto': contacto_a,
-                    'nombre_repre': repre_a, 'rut_repre': rut_repre_a, 'correo_repre': correo_repre_a,
-                    'fecha_fumi': format_fecha_es(fecha_fumi_a), 'hora_ini': hora_ini_a.strftime("%H:%M"),
-                    'hora_ter': hora_ter_a.strftime("%H:%M"), 'horas_exp': str(horas_exp_a), 'dosis': dosis_a,
-                    'tipo_fum': tipo_fum_a, 'estructura_lote': estructura_lote_a, 'areas': areas_a, 'producto': producto_a,
-                    'quimico': quimico_a, 'plaga': plaga_a,
-                    'check_carpa': check_on if modalidad_a == "Lote bajo carpa" else check_off,
-                    'check_silo': check_on if modalidad_a == "Silos" else check_off,
-                    'check_estructura': check_on if modalidad_a == "Estructuras" else check_off,
-                    'check_contenedor': check_on if modalidad_a == "Contenedores" else check_off,
-                    'check_otro': check_on if modalidad_a == "Otros" else check_off,
-                    'texto_otro': texto_otro_a if modalidad_a == "Otros" else "____________________"
-                }
-
-                mapa_path, firma_path = None, None
-                if mapa_file:
-                    mapa_path, _, _ = procesar_imagen_full(mapa_file)
-                    if mapa_path: context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(135))
-                if firma_aviso:
-                    firma_path = procesar_firma(firma_aviso)
-                    if firma_path: context['firma_img'] = InlineImage(doc, firma_path, width=Mm(35))
-
-                doc.render(context)
-                tmp_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-                doc.save(tmp_docx.name)
-                with open(tmp_docx.name, "rb") as f: st.session_state.word_aviso = f.read()
+                    check_on = "☒"
+                    check_off = "☐"
                     
-                if mapa_path and os.path.exists(mapa_path): os.remove(mapa_path)
-                if firma_path and os.path.exists(firma_path): os.remove(firma_path)
-            except Exception as e:
-                st.error(f"Error generando Word: {e}")
-        
-        st.rerun()
+                    context = {
+                        'fecha_emision': format_fecha_es(fecha_emision_a),
+                        'visita_previa': format_fecha_es(fecha_visita_a),
+                        'hora_emision': hora_emision_a.strftime("%H:%M"),
+                        'cliente': cliente_a,
+                        'rut_cliente': rut_cliente_a,
+                        'tel_cliente': tel_cliente_a,
+                        'comuna': comuna_a,
+                        'direccion': dir_a,
+                        'contacto': contacto_a,
+                        
+                        'nombre_repre': repre_a,
+                        'rut_repre': rut_repre_a,
+                        'correo_repre': correo_repre_a,
+                        
+                        'fecha_fumi': format_fecha_es(fecha_fumi_a),
+                        'hora_ini': hora_ini_a.strftime("%H:%M"),
+                        'hora_ter': hora_ter_a.strftime("%H:%M"),
+                        'horas_exp': str(horas_exp_a),
+                        'dosis': dosis_a,
+                        'tipo_fum': tipo_fum_a,
+                        'estructura_lote': estructura_lote_a,
+                        'areas': areas_a,
+                        'producto': producto_a,
+                        'quimico': quimico_a,
+                        'plaga': plaga_a,
+                        
+                        'check_carpa': check_on if modalidad_a == "Lote bajo carpa" else check_off,
+                        'check_silo': check_on if modalidad_a == "Silos" else check_off,
+                        'check_estructura': check_on if modalidad_a == "Estructuras" else check_off,
+                        'check_contenedor': check_on if modalidad_a == "Contenedores" else check_off,
+                        'check_otro': check_on if modalidad_a == "Otros" else check_off,
+                        'texto_otro': texto_otro_a if modalidad_a == "Otros" else "____________________"
+                    }
 
-    # MOSTRAR BOTONES DE DESCARGA
-    if st.session_state.get("word_aviso") is not None or st.session_state.get("pdf_aviso") is not None:
-        st.success("✅ Documentos de Aviso/Notificación procesados exitosamente.")
-        col_down1, col_down2 = st.columns(2)
-        with col_down1:
-            if st.session_state.get("word_aviso"):
-                st.download_button("📄 DESCARGAR FORMATO WORD", data=st.session_state.word_aviso, file_name="Aviso_Notificacion.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
-        with col_down2:
-            if st.session_state.get("pdf_aviso"):
-                st.download_button("📜 DESCARGAR FORMATO PDF", data=st.session_state.pdf_aviso, file_name="Aviso_Notificacion.pdf", mime="application/pdf", use_container_width=True)
+                    mapa_path = None
+                    firma_path = None
+                    
+                    if mapa_file:
+                        mapa_path, _, _ = procesar_imagen_full(mapa_file)
+                        if mapa_path:
+                            context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(135))
+                            
+                    if firma_aviso:
+                        firma_path = procesar_firma(firma_aviso)
+                        if firma_path:
+                            context['firma_img'] = InlineImage(doc, firma_path, width=Mm(35))
+
+                    doc.render(context)
+                    
+                    tmp_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    doc.save(tmp_docx.name)
+                    
+                    with open(tmp_docx.name, "rb") as f:
+                        st.session_state.word_aviso = f.read()
+                        
+                    if mapa_path and os.path.exists(mapa_path): os.remove(mapa_path)
+                    if firma_path and os.path.exists(firma_path): os.remove(firma_path)
+                    
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error generando el documento: {e}")
+                    st.code(traceback.format_exc())
+
+    if st.session_state.get("word_aviso") is not None:
+        st.success("✅ Documento de Aviso/Notificación Generado Exitosamente")
+        st.download_button(
+            label="📄 DESCARGAR AVISO EN WORD",
+            data=st.session_state.word_aviso,
+            file_name="Aviso_Notificacion_Rentokil.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True
+        )
 
 # ==============================================================================
 # LÓGICA: VISITA TÉCNICA 
@@ -1034,7 +990,7 @@ elif st.session_state.app_mode == "MOLINOS":
         except Exception as e: st.error(f"Error al generar documentos: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA: ESTRUCTURAS
+# LÓGICA: ESTRUCTURAS (AHORA CON 10 PUNTOS)
 # ==============================================================================
 elif st.session_state.app_mode == "ESTRUCTURAS":
     st.title("🏗️ Informe y Certificado Estructuras")
@@ -1094,21 +1050,19 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
         h_ter_e = st.time_input("Hora Término", datetime.time(10, 0))
     h_exp_e = (datetime.datetime.combine(f_ter_e, h_ter_e) - datetime.datetime.combine(f_ini_e, h_ini_e)).total_seconds() / 3600
 
-    st.markdown("**Nombres de Puntos de Medición (Hasta 10):**")
+    st.markdown("**Nombres de Puntos de Medición (Máximo 10):**")
     c_n1 = st.columns(5)
     c_n2 = st.columns(5)
-    n_cols_temp = ["Fecha", "Hora"]
     
     for i in range(5): 
         nom = c_n1[i].text_input(f"P {i+1}", st.session_state.nom_p[i], key=f"p_{i}")
         st.session_state.nom_p[i] = nom
-        n_cols_temp.append(nom)
         
     for i in range(5, 10): 
         nom = c_n2[i-5].text_input(f"P {i+1}", st.session_state.nom_p[i], key=f"p_{i}")
         st.session_state.nom_p[i] = nom
-        n_cols_temp.append(nom)
     
+    # Reconfigurar tabla dinámica para los 10 puntos
     col_conf = {"Fecha": "Fecha", "Hora": "Hora"}
     for i in range(10):
         col_conf[f"P{i+1}"] = st.session_state.nom_p[i]
