@@ -70,7 +70,6 @@ if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 if "word_aviso" not in st.session_state: st.session_state.word_aviso = None
-if "pdf_aviso" not in st.session_state: st.session_state.pdf_aviso = None
 if "sucursal_filtro" not in st.session_state: st.session_state.sucursal_filtro = "SANTIAGO"
 
 # Memoria para nombres de archivos
@@ -78,7 +77,7 @@ if "fn_informe" not in st.session_state: st.session_state.fn_informe = "Informe.
 if "fn_cert" not in st.session_state: st.session_state.fn_cert = "Certificado.pdf"
 if "fn_trabajo" not in st.session_state: st.session_state.fn_trabajo = "Trabajo.pdf"
 if "fn_visita" not in st.session_state: st.session_state.fn_visita = "Visita.pdf"
-if "fn_aviso" not in st.session_state: st.session_state.fn_aviso = "Aviso"
+if "fn_aviso" not in st.session_state: st.session_state.fn_aviso = "Aviso.docx"
 
 # Fijar la hora por defecto una sola vez
 if "hora_emision_default" not in st.session_state:
@@ -443,33 +442,6 @@ class CertificadoPDF(FPDF):
             self.ln()
         self.ln(4)
 
-# Motor exclusivo para Notificaciones PDF
-class AvisoPDF(FPDF):
-    def header(self):
-        if os.path.exists('logo.png'):
-            try: self.image('logo.png', 10, 8, 33)
-            except: pass
-        self.set_font("Arial", "B", 14); self.set_text_color(*COLOR_PRIMARIO)
-        self.cell(0, 8, "AVISO DE FUMIGACIÓN / NOTIFICACIÓN SEREMI", ln=1, align="R")
-        self.set_font("Arial", "I", 8); self.set_text_color(100, 100, 100)
-        self.cell(0, 5, "RENTOKIL INITIAL CHILE SPA", ln=1, align="R"); self.ln(10)
-
-    def footer(self):
-        self.set_y(-15); self.set_font("Arial", "I", 8); self.set_text_color(150, 150, 150)
-        self.cell(0, 10, f"Documento Oficial Rentokil Initial Chile SpA - Página {self.page_no()}", align="C")
-
-    def section_title(self, title):
-        self.ln(4); self.set_font("Arial", "B", 10); self.set_fill_color(*COLOR_PRIMARIO); self.set_text_color(255, 255, 255)
-        self.cell(0, 6, f"  {title}", ln=1, fill=True); self.set_text_color(0, 0, 0); self.ln(2)
-
-    def kv_row(self, key1, val1, key2=None, val2=None):
-        self.set_font("Arial", "B", 9); self.cell(35, 6, f"{key1}:", border=0)
-        self.set_font("Arial", "", 9); self.cell(60, 6, str(val1), border=0)
-        if key2:
-            self.set_font("Arial", "B", 9); self.cell(35, 6, f"{key2}:", border=0)
-            self.set_font("Arial", "", 9); self.cell(60, 6, str(val2), border=0)
-        self.ln()
-
 # ==============================================================================
 # PANTALLA DE INICIO (HUB PRINCIPAL)
 # ==============================================================================
@@ -523,222 +495,182 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "TRABAJO"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN (NOTIFICACIONES)
+# LÓGICA: AVISO DE FUMIGACIÓN (ESTRICTAMENTE EN WORD)
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     st.title("📢 Generador de Aviso al Seremi")
     
     if not DOCXTPL_INSTALLED:
-        st.warning("⚠️ El formato Word requiere la librería `docxtpl`. Solo se generará en PDF hasta que se instale.")
-    
-    st.subheader("📝 I. Datos de Emisión y Cliente")
-    op_a = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()))
-    db_a = DATABASE_COMBINADA
-    
-    col_a1, col_a2, col_a3 = st.columns(3)
-    with col_a1:
-        cliente_a = st.text_input("Razón Social", db_a[op_a].get("cliente", op_a))
-        rut_cliente_a = st.text_input("RUT Cliente", db_a[op_a].get("rut", ""))
-        contacto_a = st.text_input("Atención a (Contacto)", "Jefe de Planta")
-    with col_a2:
-        dir_a = st.text_input("Dirección", db_a[op_a].get("direccion", ""))
-        comuna_a = st.text_input("Comuna", "")
-        tel_cliente_a = st.text_input("Teléfono Cliente", "")
-    with col_a3:
-        fecha_emision_a = st.date_input("Fecha de emisión del documento", datetime.date.today())
-        fecha_visita_a = st.date_input("Fecha de Visita Previa", datetime.date.today() - datetime.timedelta(days=1))
-        hora_emision_a = st.time_input("Hora de Emisión (Ajustar si es necesario)", st.session_state.hora_emision_default)
-        st.session_state.hora_emision_default = hora_emision_a
+        st.error("⚠️ Para usar este módulo, debes agregar la palabra `docxtpl` a tu archivo `requirements.txt` en GitHub y esperar 2 minutos a que se instale.")
+    else:
+        st.markdown("Asegúrate de haber subido el archivo **`plantilla_aviso.docx`** a tu GitHub con las etiquetas correspondientes.")
+        
+        st.subheader("📝 I. Datos de Emisión y Cliente")
+        op_a = st.selectbox("Seleccione Cliente", list(DATABASE_COMBINADA.keys()))
+        db_a = DATABASE_COMBINADA
+        
+        col_a1, col_a2, col_a3 = st.columns(3)
+        with col_a1:
+            cliente_a = st.text_input("Razón Social", db_a[op_a].get("cliente", op_a))
+            rut_cliente_a = st.text_input("RUT Cliente", db_a[op_a].get("rut", ""))
+            contacto_a = st.text_input("Atención a (Contacto)", "Jefe de Planta")
+        with col_a2:
+            dir_a = st.text_input("Dirección", db_a[op_a].get("direccion", ""))
+            comuna_a = st.text_input("Comuna", "")
+            tel_cliente_a = st.text_input("Teléfono Cliente", "")
+        with col_a3:
+            fecha_emision_a = st.date_input("Fecha de emisión del documento", datetime.date.today())
+            fecha_visita_a = st.date_input("Fecha de Visita Previa", datetime.date.today() - datetime.timedelta(days=1))
+            hora_emision_a = st.time_input("Hora de Emisión (Ajustar si es necesario)", st.session_state.hora_emision_default)
+            st.session_state.hora_emision_default = hora_emision_a
 
-    st.subheader("👨‍💼 II. Datos del Representante (Rentokil)")
-    col_r1, col_r2, col_r3 = st.columns(3)
-    with col_r1:
-        rep_a_sel = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES, key="rep_sel_a")
-        if rep_a_sel == "OTRO":
-            repre_a = st.text_input("Nombre Representante Manual:", key="rep_man_a")
-            rut_repre_default = ""
-            correo_repre_default = ""
-        else:
-            repre_a = rep_a_sel
-            rut_repre_default = DATABASE_REPRESENTANTES[rep_a_sel].get("rut", "")
-            correo_repre_default = DATABASE_REPRESENTANTES[rep_a_sel].get("correo", "")
+        st.subheader("👨‍💼 II. Datos del Representante (Rentokil)")
+        col_r1, col_r2, col_r3 = st.columns(3)
+        with col_r1:
+            rep_a_sel = st.selectbox("Representante Rentokil", LISTA_REPRESENTANTES, key="rep_sel_a")
+            if rep_a_sel == "OTRO":
+                repre_a = st.text_input("Nombre Representante Manual:", key="rep_man_a")
+                rut_repre_default = ""
+                correo_repre_default = ""
+            else:
+                repre_a = rep_a_sel
+                rut_repre_default = DATABASE_REPRESENTANTES[rep_a_sel].get("rut", "")
+                correo_repre_default = DATABASE_REPRESENTANTES[rep_a_sel].get("correo", "")
+                
+        with col_r2:
+            rut_repre_a = st.text_input("RUT Representante", rut_repre_default)
+        with col_r3:
+            correo_repre_a = st.text_input("Correo Representante", correo_repre_default)
+
+        st.subheader("☣️ III. Detalles Técnicos de la Fumigación")
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+        with col_f1:
+            fecha_fumi_a = st.date_input("Fecha de Fumigación", datetime.date.today() + datetime.timedelta(days=2))
+            tipo_fum_a = st.selectbox("Tipo de Fumigación", ["Preventiva", "Curativa"])
+        with col_f2:
+            hora_ini_a = st.time_input("Hora Inicio Inyección", datetime.time(9, 0))
+            hora_ter_a = st.time_input("Hora Fin Ventilación", datetime.time(18, 0))
+        with col_f3:
+            horas_exp_a = st.number_input("Horas de Exposición", value=72)
+            dosis_a = st.text_input("Dosis Planificada", "3 g/m3")
+        with col_f4:
+            estructura_lote_a = st.text_input("Estructura / Lote a Tratar", "Lote 1")
+            areas_a = st.text_input("Área General", "Bodega Principal")
             
-    with col_r2:
-        rut_repre_a = st.text_input("RUT Representante", rut_repre_default)
-    with col_r3:
-        correo_repre_a = st.text_input("Correo Representante", correo_repre_default)
+        col_f5, col_f6, col_f7 = st.columns(3)
+        with col_f5:
+            producto_a = st.text_input("Mercadería / Producto a Tratar (Cultivo)", "Nueces de exportación")
+        with col_f6:
+            quimico_a = st.selectbox("Químico (Fumigante)", ["Fosfina (Fosfuro de Aluminio)", "Fosfuro de Magnesio", "Ambos (Fosfuro de Aluminio y Magnesio)"])
+        with col_f7:
+            if tipo_fum_a == "Curativa":
+                plaga_a = st.text_input("Plaga Detectada", "Tribolium confusum")
+            else:
+                plaga_a = ""
+                st.text_input("Plaga Detectada", "N/A (Tratamiento Preventivo)", disabled=True)
 
-    st.subheader("☣️ III. Detalles Técnicos de la Fumigación")
-    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
-    with col_f1:
-        fecha_fumi_a = st.date_input("Fecha de Fumigación", datetime.date.today() + datetime.timedelta(days=2))
-        tipo_fum_a = st.selectbox("Tipo de Fumigación", ["Preventiva", "Curativa"])
-    with col_f2:
-        hora_ini_a = st.time_input("Hora Inicio Inyección", datetime.time(9, 0))
-        hora_ter_a = st.time_input("Hora Fin Ventilación", datetime.time(18, 0))
-    with col_f3:
-        horas_exp_a = st.number_input("Horas de Exposición", value=72)
-        dosis_a = st.text_input("Dosis Planificada", "3 g/m3")
-    with col_f4:
-        estructura_lote_a = st.text_input("Estructura / Lote a Tratar", "Lote 1")
-        areas_a = st.text_input("Área General", "Bodega Principal")
+        st.subheader("🛠️ IV. Modalidad de Tratamiento")
+        modalidad_a = st.selectbox("Seleccione la modalidad para marcar en el documento", 
+                                   ["Lote bajo carpa", "Silos", "Estructuras", "Contenedores", "Otros"])
         
-    col_f5, col_f6, col_f7 = st.columns(3)
-    with col_f5:
-        producto_a = st.text_input("Mercadería / Producto a Tratar (Cultivo)", "Nueces de exportación")
-    with col_f6:
-        quimico_a = st.selectbox("Químico (Fumigante)", ["Fosfina (Fosfuro de Aluminio)", "Fosfuro de Magnesio", "Ambos (Fosfuro de Aluminio y Magnesio)"])
-    with col_f7:
-        if tipo_fum_a == "Curativa":
-            plaga_a = st.text_input("Plaga Detectada", "Tribolium confusum")
-        else:
-            plaga_a = ""
-            st.text_input("Plaga Detectada", "N/A (Tratamiento Preventivo)", disabled=True)
+        texto_otro_a = "____________________"
+        if modalidad_a == "Otros":
+            texto_otro_a = st.text_input("Especifique qué otro tratamiento:")
 
-    st.subheader("🛠️ IV. Modalidad de Tratamiento")
-    modalidad_a = st.selectbox("Seleccione la modalidad para marcar en el documento", 
-                               ["Lote bajo carpa", "Silos", "Estructuras", "Contenedores", "Otros"])
-    
-    texto_otro_a = "____________________"
-    if modalidad_a == "Otros":
-        texto_otro_a = st.text_input("Especifique qué otro tratamiento:")
+        st.subheader("🗺️ V. Mapa y Firma")
+        col_img1, col_img2 = st.columns(2)
+        with col_img1:
+            mapa_file = st.file_uploader("Sube el Mapa de Georreferencia", type=["png", "jpg", "jpeg", "heic"])
+        with col_img2:
+            firma_aviso = st.file_uploader("Firma del Responsable Rentokil", type=["png", "jpg", "jpeg", "heic"])
 
-    st.subheader("🗺️ V. Mapa y Firma")
-    col_img1, col_img2 = st.columns(2)
-    with col_img1:
-        mapa_file = st.file_uploader("Sube el Mapa de Georreferencia", type=["png", "jpg", "jpeg", "heic"])
-    with col_img2:
-        firma_aviso = st.file_uploader("Firma del Responsable Rentokil", type=["png", "jpg", "jpeg", "heic"])
-
-    # --- SELECTOR DE FORMATO DE SALIDA ---
-    st.markdown("---")
-    opciones_formato = ["Generar en PDF (.pdf)"]
-    if DOCXTPL_INSTALLED and os.path.exists("plantilla_aviso.docx"):
-        opciones_formato.append("Generar en Word (.docx)")
-        
-    formato_salida = st.radio("SELECCIONE EL FORMATO DEL DOCUMENTO:", opciones_formato, horizontal=True)
-
-    if st.button("🚀 GENERAR AVISO AL SEREMI", use_container_width=True, type="primary"):
-        # Limpiar variables anteriores y nombrar archivo
-        st.session_state.word_aviso = None
-        st.session_state.pdf_aviso = None
-        cliente_limpio = clean_filename(cliente_a)
-        st.session_state.fn_aviso = f"{fecha_emision_a.strftime('%Y%m%d')}_Aviso_Seremi_{cliente_limpio}"
-
-        # OPCIÓN 1: GENERAR PDF
-        if formato_salida == "Generar en PDF (.pdf)":
-            try:
-                pdf_a = AvisoPDF()
-                pdf_a.add_page()
-                
-                pdf_a.section_title("I. DATOS DE EMISIÓN Y CLIENTE")
-                pdf_a.kv_row("Fecha Emisión", format_fecha_es(fecha_emision_a), "Hora Emisión", hora_emision_a.strftime("%H:%M"))
-                pdf_a.kv_row("Visita Previa", format_fecha_es(fecha_visita_a))
-                pdf_a.kv_row("Razón Social", cliente_a, "RUT Cliente", rut_cliente_a)
-                pdf_a.kv_row("Atención a", contacto_a, "Teléfono", tel_cliente_a)
-                pdf_a.kv_row("Dirección", dir_a, "Comuna", comuna_a)
-                
-                pdf_a.section_title("II. DATOS DEL REPRESENTANTE RENTOKIL")
-                pdf_a.kv_row("Nombre", repre_a, "RUT", rut_repre_a)
-                pdf_a.kv_row("Correo", correo_repre_a)
-                
-                pdf_a.section_title("III. DETALLES TÉCNICOS DE FUMIGACIÓN")
-                pdf_a.kv_row("Fecha Tratam.", format_fecha_es(fecha_fumi_a), "Tipo", tipo_fum_a)
-                pdf_a.kv_row("Hora Inicio", hora_ini_a.strftime("%H:%M"), "Hora Término", hora_ter_a.strftime("%H:%M"))
-                pdf_a.kv_row("Hrs. Exposición", f"{horas_exp_a} Hrs", "Dosis", dosis_a)
-                pdf_a.kv_row("Estructura/Lote", estructura_lote_a, "Área General", areas_a)
-                pdf_a.kv_row("Producto", producto_a)
-                pdf_a.kv_row("Químico", quimico_a[:45])
-                if plaga_a: pdf_a.kv_row("Plaga Detectada", plaga_a)
-                
-                pdf_a.section_title("IV. MODALIDAD DE TRATAMIENTO")
-                pdf_a.set_font("Arial", "", 9)
-                pdf_a.cell(0, 6, f"Modalidad seleccionada: {modalidad_a}", ln=1)
-                if modalidad_a == "Otros": pdf_a.cell(0, 6, f"Especificación: {texto_otro_a}", ln=1)
-                
-                pdf_a.section_title("V. MAPA Y FIRMA")
-                y_start_img = pdf_a.get_y()
-                mapa_path, firma_path = None, None
-                
-                if mapa_file:
-                    mapa_path, w, h = procesar_imagen_full(mapa_file)
-                    if mapa_path:
-                        ratio = w / h
-                        max_w = 90
-                        final_h = max_w / ratio
-                        pdf_a.image(mapa_path, x=15, y=y_start_img, w=max_w, h=final_h)
-                
-                if firma_aviso:
-                    firma_path = procesar_firma(firma_aviso)
-                    if firma_path:
-                        pdf_a.image(firma_path, x=120, y=y_start_img + 15, w=50)
-                
-                if pdf_a.get_y() < y_start_img + 90:
-                    pdf_a.set_y(y_start_img + 90)
-
-                tmp_pdf_a = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-                pdf_a.output(tmp_pdf_a.name)
-                with open(tmp_pdf_a.name, "rb") as f_pdf: 
-                    st.session_state.pdf_aviso = f_pdf.read()
+        if st.button("🚀 GENERAR AVISO AL SEREMI", use_container_width=True, type="primary"):
+            if not os.path.exists("plantilla_aviso.docx"):
+                st.error("❌ No se encontró el archivo `plantilla_aviso.docx`. Por favor, súbelo a GitHub en la misma carpeta.")
+            else:
+                try:
+                    # Asignar nombre dinámico y limpiarlo para Windows
+                    cliente_limpio = clean_filename(cliente_a)
+                    st.session_state.fn_aviso = f"{fecha_emision_a.strftime('%Y%m%d')}_Aviso_Seremi_{cliente_limpio}.docx"
                     
-                if mapa_path and os.path.exists(mapa_path): os.remove(mapa_path)
-                if firma_path and os.path.exists(firma_path): os.remove(firma_path)
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error generando PDF: {e}")
-
-        # OPCIÓN 2: GENERAR WORD
-        elif formato_salida == "Generar en Word (.docx)":
-            try:
-                doc = DocxTemplate("plantilla_aviso.docx")
-                check_on = "☒"
-                check_off = "☐"
-                
-                context = {
-                    'fecha_emision': format_fecha_es(fecha_emision_a), 'visita_previa': format_fecha_es(fecha_visita_a),
-                    'hora_emision': hora_emision_a.strftime("%H:%M"), 'cliente': cliente_a, 'rut_cliente': rut_cliente_a,
-                    'tel_cliente': tel_cliente_a, 'comuna': comuna_a, 'direccion': dir_a, 'contacto': contacto_a,
-                    'nombre_repre': repre_a, 'rut_repre': rut_repre_a, 'correo_repre': correo_repre_a,
-                    'fecha_fumi': format_fecha_es(fecha_fumi_a), 'hora_ini': hora_ini_a.strftime("%H:%M"),
-                    'hora_ter': hora_ter_a.strftime("%H:%M"), 'horas_exp': str(horas_exp_a), 'dosis': dosis_a,
-                    'tipo_fum': tipo_fum_a, 'estructura_lote': estructura_lote_a, 'areas': areas_a, 'producto': producto_a,
-                    'quimico': quimico_a, 'plaga': plaga_a,
-                    'check_carpa': check_on if modalidad_a == "Lote bajo carpa" else check_off,
-                    'check_silo': check_on if modalidad_a == "Silos" else check_off,
-                    'check_estructura': check_on if modalidad_a == "Estructuras" else check_off,
-                    'check_contenedor': check_on if modalidad_a == "Contenedores" else check_off,
-                    'check_otro': check_on if modalidad_a == "Otros" else check_off,
-                    'texto_otro': texto_otro_a if modalidad_a == "Otros" else "____________________"
-                }
-
-                mapa_path, firma_path = None, None
-                if mapa_file:
-                    mapa_path, _, _ = procesar_imagen_full(mapa_file)
-                    if mapa_path: context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(135))
-                if firma_aviso:
-                    firma_path = procesar_firma(firma_aviso)
-                    if firma_path: context['firma_img'] = InlineImage(doc, firma_path, width=Mm(35))
-
-                doc.render(context)
-                tmp_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-                doc.save(tmp_docx.name)
-                with open(tmp_docx.name, "rb") as f: 
-                    st.session_state.word_aviso = f.read()
+                    doc = DocxTemplate("plantilla_aviso.docx")
                     
-                if mapa_path and os.path.exists(mapa_path): os.remove(mapa_path)
-                if firma_path and os.path.exists(firma_path): os.remove(firma_path)
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error generando Word: {e}"); st.code(traceback.format_exc())
+                    check_on = "☒"
+                    check_off = "☐"
+                    
+                    context = {
+                        'fecha_emision': format_fecha_es(fecha_emision_a),
+                        'visita_previa': format_fecha_es(fecha_visita_a),
+                        'hora_emision': hora_emision_a.strftime("%H:%M"),
+                        'cliente': cliente_a,
+                        'rut_cliente': rut_cliente_a,
+                        'tel_cliente': tel_cliente_a,
+                        'comuna': comuna_a,
+                        'direccion': dir_a,
+                        'contacto': contacto_a,
+                        
+                        'nombre_repre': repre_a,
+                        'rut_repre': rut_repre_a,
+                        'correo_repre': correo_repre_a,
+                        
+                        'fecha_fumi': format_fecha_es(fecha_fumi_a),
+                        'hora_ini': hora_ini_a.strftime("%H:%M"),
+                        'hora_ter': hora_ter_a.strftime("%H:%M"),
+                        'horas_exp': str(horas_exp_a),
+                        'dosis': dosis_a,
+                        'tipo_fum': tipo_fum_a,
+                        'estructura_lote': estructura_lote_a,
+                        'areas': areas_a,
+                        'producto': producto_a,
+                        'quimico': quimico_a,
+                        'plaga': plaga_a,
+                        
+                        'check_carpa': check_on if modalidad_a == "Lote bajo carpa" else check_off,
+                        'check_silo': check_on if modalidad_a == "Silos" else check_off,
+                        'check_estructura': check_on if modalidad_a == "Estructuras" else check_off,
+                        'check_contenedor': check_on if modalidad_a == "Contenedores" else check_off,
+                        'check_otro': check_on if modalidad_a == "Otros" else check_off,
+                        'texto_otro': texto_otro_a if modalidad_a == "Otros" else "____________________"
+                    }
 
-    # BOTONES DE DESCARGA (AVISO)
+                    mapa_path = None
+                    firma_path = None
+                    
+                    if mapa_file:
+                        mapa_path, _, _ = procesar_imagen_full(mapa_file)
+                        if mapa_path:
+                            context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(135))
+                            
+                    if firma_aviso:
+                        firma_path = procesar_firma(firma_aviso)
+                        if firma_path:
+                            context['firma_img'] = InlineImage(doc, firma_path, width=Mm(35))
+
+                    doc.render(context)
+                    
+                    tmp_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                    doc.save(tmp_docx.name)
+                    
+                    with open(tmp_docx.name, "rb") as f:
+                        st.session_state.word_aviso = f.read()
+                        
+                    if mapa_path and os.path.exists(mapa_path): os.remove(mapa_path)
+                    if firma_path and os.path.exists(firma_path): os.remove(firma_path)
+                    
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error generando el documento: {e}")
+                    st.code(traceback.format_exc())
+
     if st.session_state.get("word_aviso") is not None:
-        st.success("✅ Documento de Aviso en Word generado exitosamente")
-        st.download_button(label="📄 DESCARGAR AVISO EN WORD", data=st.session_state.word_aviso, file_name=f"{st.session_state.fn_aviso}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
-    
-    if st.session_state.get("pdf_aviso") is not None:
-        st.success("✅ Documento de Aviso en PDF generado exitosamente")
-        st.download_button(label="📜 DESCARGAR AVISO EN PDF", data=st.session_state.pdf_aviso, file_name=f"{st.session_state.fn_aviso}.pdf", mime="application/pdf", use_container_width=True)
+        st.success("✅ Documento de Aviso/Notificación Generado Exitosamente")
+        st.download_button(
+            label="📄 DESCARGAR AVISO EN WORD",
+            data=st.session_state.word_aviso,
+            file_name=st.session_state.fn_aviso,
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True
+        )
 
 # ==============================================================================
 # LÓGICA: VISITA TÉCNICA 
