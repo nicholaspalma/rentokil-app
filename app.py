@@ -495,7 +495,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "TRABAJO"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN (ESTRICTAMENTE EN WORD)
+# LÓGICA: AVISO DE FUMIGACIÓN (WORD ORIGINAL RESTAURADO + MAPAS AUTOMÁTICOS)
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     st.title("📢 Generador de Aviso al Seremi")
@@ -578,9 +578,28 @@ elif st.session_state.app_mode == "AVISO":
             texto_otro_a = st.text_input("Especifique qué otro tratamiento:")
 
         st.subheader("🗺️ V. Mapa y Firma")
+        
+        # --- LÓGICA DE MAPA AUTOMÁTICO ---
+        mapa_automatico_path = None
+        extensiones = ['.jpg', '.jpeg', '.png']
+        nombre_cliente_limpio = str(cliente_a).strip()
+        
+        for ext in extensiones:
+            ruta_posible = os.path.join("mapas", nombre_cliente_limpio + ext)
+            if os.path.exists(ruta_posible):
+                mapa_automatico_path = ruta_posible
+                break
+                
         col_img1, col_img2 = st.columns(2)
         with col_img1:
-            mapa_file = st.file_uploader("Sube el Mapa de Georreferencia", type=["png", "jpg", "jpeg", "heic"])
+            if mapa_automatico_path:
+                st.success(f"✅ Mapa de **{nombre_cliente_limpio}** detectado automáticamente en la carpeta 'mapas/'.")
+                # El uploader se convierte en un plan B opcional
+                mapa_file = st.file_uploader("Subir un mapa diferente (Opcional)", type=["png", "jpg", "jpeg", "heic"])
+            else:
+                st.warning(f"⚠️ No se encontró el mapa automático para **{nombre_cliente_limpio}** en la carpeta 'mapas/'.")
+                mapa_file = st.file_uploader("Sube el Mapa de Georreferencia manualmente", type=["png", "jpg", "jpeg", "heic"])
+                
         with col_img2:
             firma_aviso = st.file_uploader("Firma del Responsable Rentokil", type=["png", "jpg", "jpeg", "heic"])
 
@@ -590,8 +609,8 @@ elif st.session_state.app_mode == "AVISO":
             else:
                 try:
                     # Asignar nombre dinámico y limpiarlo para Windows
-                    cliente_limpio = clean_filename(cliente_a)
-                    st.session_state.fn_aviso = f"{fecha_emision_a.strftime('%Y%m%d')}_Aviso_Seremi_{cliente_limpio}.docx"
+                    cliente_limpio_file = clean_filename(cliente_a)
+                    st.session_state.fn_aviso = f"{fecha_emision_a.strftime('%Y%m%d')}_Aviso_Seremi_{cliente_limpio_file}.docx"
                     
                     doc = DocxTemplate("plantilla_aviso.docx")
                     
@@ -633,13 +652,22 @@ elif st.session_state.app_mode == "AVISO":
                         'texto_otro': texto_otro_a if modalidad_a == "Otros" else "____________________"
                     }
 
-                    mapa_path = None
+                    mapa_final_usar = None
                     firma_path = None
                     
+                    # Decidir qué mapa usar (Prioriza el subido manualmente, si no, usa el automático)
                     if mapa_file:
-                        mapa_path, _, _ = procesar_imagen_full(mapa_file)
-                        if mapa_path:
-                            context['mapa_img'] = InlineImage(doc, mapa_path, width=Mm(135))
+                        mapa_final_usar, _, _ = procesar_imagen_full(mapa_file)
+                    elif mapa_automatico_path:
+                        # Si usamos la ruta automática, simulamos que es un archivo subido abriéndolo
+                        with open(mapa_automatico_path, "rb") as f_auto:
+                            # Creamos un objeto temporal tipo BytesIO para que procesar_imagen_full lo entienda
+                            import io
+                            mapa_bytes = io.BytesIO(f_auto.read())
+                            mapa_final_usar, _, _ = procesar_imagen_full(mapa_bytes)
+                            
+                    if mapa_final_usar:
+                        context['mapa_img'] = InlineImage(doc, mapa_final_usar, width=Mm(135))
                             
                     if firma_aviso:
                         firma_path = procesar_firma(firma_aviso)
@@ -654,7 +682,7 @@ elif st.session_state.app_mode == "AVISO":
                     with open(tmp_docx.name, "rb") as f:
                         st.session_state.word_aviso = f.read()
                         
-                    if mapa_path and os.path.exists(mapa_path): os.remove(mapa_path)
+                    if mapa_final_usar and os.path.exists(mapa_final_usar): os.remove(mapa_final_usar)
                     if firma_path and os.path.exists(firma_path): os.remove(firma_path)
                     
                     st.rerun()
