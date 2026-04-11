@@ -7,6 +7,8 @@ import os
 import tempfile
 import math
 import io
+import subprocess
+from urllib.parse import quote
 from PIL import Image, ImageOps, ImageFile
 import traceback
 import gc
@@ -61,6 +63,24 @@ st.markdown("""
         border-color: #008BBF !important;
         color: white !important;
     }
+    .email-btn {
+        display: inline-flex; 
+        align-items: center; 
+        justify-content: center;
+        background-color: #4285F4; 
+        color: white; 
+        padding: 10px 20px;
+        text-decoration: none; 
+        border-radius: 5px; 
+        font-weight: bold; 
+        width: 100%; 
+        text-align: center; 
+        margin-top: 10px;
+    }
+    .email-btn:hover {
+        background-color: #3367D6; 
+        color: white;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -71,6 +91,8 @@ if "pdf_cert" not in st.session_state: st.session_state.pdf_cert = None
 if "pdf_dialogo" not in st.session_state: st.session_state.pdf_dialogo = None
 if "pdf_visita" not in st.session_state: st.session_state.pdf_visita = None
 if "word_aviso" not in st.session_state: st.session_state.word_aviso = None
+if "pdf_aviso" not in st.session_state: st.session_state.pdf_aviso = None
+if "mailto_url" not in st.session_state: st.session_state.mailto_url = ""
 if "sucursal_filtro" not in st.session_state: st.session_state.sucursal_filtro = "SANTIAGO"
 
 # Memoria para nombres de archivos
@@ -78,7 +100,7 @@ if "fn_informe" not in st.session_state: st.session_state.fn_informe = "Informe.
 if "fn_cert" not in st.session_state: st.session_state.fn_cert = "Certificado.pdf"
 if "fn_trabajo" not in st.session_state: st.session_state.fn_trabajo = "Trabajo.pdf"
 if "fn_visita" not in st.session_state: st.session_state.fn_visita = "Visita.pdf"
-if "fn_aviso" not in st.session_state: st.session_state.fn_aviso = "Aviso.docx"
+if "fn_aviso" not in st.session_state: st.session_state.fn_aviso = "Aviso.pdf"
 
 # Fijar la hora por defecto una sola vez
 if "hora_emision_default" not in st.session_state:
@@ -110,65 +132,77 @@ if "df_m_est" not in st.session_state:
 
 
 # ==============================================================================
-# LECTURA DINÁMICA DE EXCEL (.XLSX) Y CSV A PRUEBA DE FALLOS
+# LECTURA DINÁMICA Y LIMPIEZA PROFUNDA (PARA LOS 4 CLIENTES FANTASMA)
 # ==============================================================================
 DATABASE_COMBINADA = {}
 DATABASE_REPRESENTANTES = {}
 LISTA_SUCURSALES_SET = set()
 
+def deep_clean(text):
+    """Limpieza agresiva de espacios invisibles de Excel"""
+    if pd.isna(text) or text is None: 
+        return ""
+    text_str = str(text)
+    text_str = text_str.replace('\xa0', ' ').replace('\u200b', '').replace('\n', ' ')
+    return text_str.strip()
+
 def obtener_nombre_columna(df, palabras_clave):
     columnas = df.columns
     for col in columnas:
-        col_norm = str(col).lower().replace('á','a').replace('é','e').replace('í','i').replace('ó','o').replace('ú','u').strip()
+        col_norm = deep_clean(col).lower().replace('á','a').replace('é','e').replace('í','i').replace('ó','o').replace('ú','u').strip()
         if any(palabra in col_norm for palabra in palabras_clave):
             return col
     return None
 
-def cargar_archivo_excel(palabras_en_nombre):
-    archivos = os.listdir('.')
-    for file in archivos:
-        nombre_lower = file.lower()
-        if any(p in nombre_lower for p in palabras_en_nombre):
-            try:
-                if file.endswith('.xlsx') or file.endswith('.xls'):
-                    return pd.read_excel(file)
-                elif file.endswith('.csv'):
-                    return pd.read_csv(file, sep=None, engine='python', encoding='utf-8-sig')
-            except Exception as e:
-                st.error(f"⚠️ Error leyendo {file}: {e}")
-                return pd.DataFrame()
-    return pd.DataFrame()
-
-# 1. Cargar archivo de clientes
-df_clientes = cargar_archivo_excel(['base', 'cliente', 'dato'])
+# 1. Cargar archivo de clientes (Exclusivo .xlsx o .xls)
+df_clientes = pd.DataFrame()
+for file in os.listdir('.'):
+    if "base de datos" in file.lower() and file.lower().endswith(('.xlsx', '.xls')):
+        try:
+            df_clientes = pd.read_excel(file)
+            break
+        except Exception as e:
+            st.error(f"⚠️ Error intentando leer el archivo {file}: {e}")
 
 if not df_clientes.empty:
+    df_clientes = df_clientes.dropna(how='all') # Elimina filas 100% vacías
+    
     c_cliente = obtener_nombre_columna(df_clientes, ['razon', 'cliente', 'planta', 'social'])
     c_rut = obtener_nombre_columna(df_clientes, ['rut'])
     c_dir = obtener_nombre_columna(df_clientes, ['dir'])
     c_suc = obtener_nombre_columna(df_clientes, ['sucursal', 'suc'])
 
     if c_suc:
-        df_clientes['Sucursal_Filtro'] = df_clientes[c_suc].astype(str).str.strip().str.upper()
-        LISTA_SUCURSALES_SET.update(df_clientes['Sucursal_Filtro'].replace('NAN', np.nan).dropna().unique())
+        df_clientes['Sucursal_Filtro'] = df_clientes[c_suc].apply(deep_clean).str.upper()
+        LISTA_SUCURSALES_SET.update(df_clientes['Sucursal_Filtro'].replace('', np.nan).dropna().unique())
 else:
     c_cliente, c_rut, c_dir, c_suc = None, None, None, None
 
 
-# 2. Cargar archivo de Técnicos
-df_tecnicos = cargar_archivo_excel(['rep', 'tec'])
+# 2. Cargar archivo de Técnicos (Exclusivo .xlsx o .xls)
+df_tecnicos = pd.DataFrame()
+for file in os.listdir('.'):
+    if "representantes" in file.lower() and file.lower().endswith(('.xlsx', '.xls')):
+        try:
+            df_tecnicos = pd.read_excel(file)
+            break
+        except Exception as e:
+            st.error(f"⚠️ Error intentando leer el archivo {file}: {e}")
 
 if not df_tecnicos.empty:
+    df_tecnicos = df_tecnicos.dropna(how='all')
+    
     t_nombre = obtener_nombre_columna(df_tecnicos, ['nombre', 'rep', 'tec'])
     t_rut = obtener_nombre_columna(df_tecnicos, ['rut'])
     t_correo = obtener_nombre_columna(df_tecnicos, ['correo', 'mail'])
     t_suc = obtener_nombre_columna(df_tecnicos, ['sucursal', 'suc'])
 
     if t_suc:
-        df_tecnicos['Sucursal_Filtro'] = df_tecnicos[t_suc].astype(str).str.strip().str.upper()
-        LISTA_SUCURSALES_SET.update(df_tecnicos['Sucursal_Filtro'].replace('NAN', np.nan).dropna().unique())
+        df_tecnicos['Sucursal_Filtro'] = df_tecnicos[t_suc].apply(deep_clean).str.upper()
+        LISTA_SUCURSALES_SET.update(df_tecnicos['Sucursal_Filtro'].replace('', np.nan).dropna().unique())
 else:
     t_nombre, t_rut, t_correo, t_suc = None, None, None, None
+
 
 lista_limpia_sucursales = sorted([s for s in LISTA_SUCURSALES_SET if s and s != 'NAN'])
 LISTA_SUCURSALES = ["TODAS"] + lista_limpia_sucursales
@@ -210,12 +244,12 @@ if not df_clientes.empty and c_cliente is not None:
         df_c_filt = df_clientes
         
     for _, row in df_c_filt.iterrows():
-        nombre_cli = str(row[c_cliente]).strip()
+        nombre_cli = deep_clean(row[c_cliente])
         if nombre_cli and nombre_cli.lower() != 'nan':
             DATABASE_COMBINADA[nombre_cli] = {
                 "cliente": nombre_cli,
-                "rut": str(row[c_rut]).strip() if c_rut else "",
-                "direccion": str(row[c_dir]).strip() if c_dir else "",
+                "rut": deep_clean(row[c_rut]) if c_rut else "",
+                "direccion": deep_clean(row[c_dir]) if c_dir else "",
                 "volumen": 0
             }
 else:
@@ -232,11 +266,11 @@ if not df_tecnicos.empty and t_nombre is not None:
         df_t_filt = df_tecnicos
         
     for _, row in df_t_filt.iterrows():
-        nombre_tec = str(row[t_nombre]).strip()
+        nombre_tec = deep_clean(row[t_nombre])
         if nombre_tec and nombre_tec.lower() != 'nan':
             DATABASE_REPRESENTANTES[nombre_tec] = {
-                "rut": str(row[t_rut]).strip() if t_rut else "",
-                "correo": str(row[t_correo]).strip() if t_correo else ""
+                "rut": deep_clean(row[t_rut]) if t_rut else "",
+                "correo": deep_clean(row[t_correo]) if t_correo else ""
             }
 else:
     if st.session_state.app_mode != "HOME":
@@ -285,7 +319,8 @@ def procesar_imagen(uploaded_file):
 
 def procesar_imagen_full(uploaded_file):
     try:
-        uploaded_file.seek(0)
+        if isinstance(uploaded_file, io.BytesIO): 
+            uploaded_file.seek(0)
         image = Image.open(uploaded_file)
         image = ImageOps.exif_transpose(image)
         if image.mode != 'RGB': image = image.convert('RGB')
@@ -313,7 +348,7 @@ def procesar_firma(uploaded_file):
     except: return None
 
 # ==============================================================================
-# CLASES PDF
+# CLASES PDF ORIGINALES
 # ==============================================================================
 class InformePDF(FPDF):
     def rounded_rect(self, x, y, w, h, r, style=''):
@@ -496,7 +531,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "TRABAJO"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN (WORD ORIGINAL RESTAURADO + MAPAS AUTOMÁTICOS)
+# LÓGICA: AVISO DE FUMIGACIÓN (PDF + EMAIL)
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     st.title("📢 Generador de Aviso al Seremi")
@@ -585,7 +620,6 @@ elif st.session_state.app_mode == "AVISO":
         extensiones = ['.jpg', '.jpeg', '.png', '.HEIC', '.heic']
         nombre_cliente_limpio_mapa = str(cliente_a).strip()
         
-        # Buscar en la carpeta mapas
         for ext in extensiones:
             ruta_posible = os.path.join("mapas", nombre_cliente_limpio_mapa + ext)
             if os.path.exists(ruta_posible):
@@ -604,7 +638,7 @@ elif st.session_state.app_mode == "AVISO":
         with col_img2:
             firma_aviso = st.file_uploader("Firma del Responsable Rentokil", type=["png", "jpg", "jpeg", "heic"])
 
-        if st.button("🚀 GENERAR AVISO AL SEREMI (WORD)", use_container_width=True, type="primary"):
+        if st.button("🚀 GENERAR PDF Y PREPARAR CORREO", use_container_width=True, type="primary"):
             if not os.path.exists("plantilla_aviso.docx"):
                 st.error("❌ No se encontró el archivo `plantilla_aviso.docx`. Por favor, súbelo a GitHub en la misma carpeta.")
             else:
@@ -612,7 +646,7 @@ elif st.session_state.app_mode == "AVISO":
                     # Asignar nombre dinámico y limpiarlo para Windows (Formato: DDMMYY)
                     cliente_limpio_file = clean_filename(cliente_a)
                     fecha_str = fecha_emision_a.strftime('%d%m%y')
-                    st.session_state.fn_aviso = f"{fecha_str}_Aviso_Seremi_{cliente_limpio_file}.docx"
+                    st.session_state.fn_aviso = f"{fecha_str}_Aviso_Seremi_{cliente_limpio_file}.pdf"
                     
                     doc = DocxTemplate("plantilla_aviso.docx")
                     
@@ -657,7 +691,6 @@ elif st.session_state.app_mode == "AVISO":
                     mapa_final_usar = None
                     firma_path = None
                     
-                    # Lógica para elegir qué mapa procesar (Manual primero, si no el Automático)
                     if mapa_file:
                         mapa_final_usar, _, _ = procesar_imagen_full(mapa_file)
                     elif mapa_automatico_path:
@@ -665,7 +698,6 @@ elif st.session_state.app_mode == "AVISO":
                             mapa_bytes = io.BytesIO(f_auto.read())
                             mapa_final_usar, _, _ = procesar_imagen_full(mapa_bytes)
                             
-                    # Inyectar el mapa si existe
                     if mapa_final_usar:
                         context['mapa_img'] = InlineImage(doc, mapa_final_usar, width=Mm(135))
                             
@@ -676,12 +708,31 @@ elif st.session_state.app_mode == "AVISO":
 
                     doc.render(context)
                     
-                    tmp_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-                    doc.save(tmp_docx.name)
-                    
-                    with open(tmp_docx.name, "rb") as f:
-                        st.session_state.word_aviso = f.read()
+                    # --- CONVERSIÓN A PDF CON LIBREOFFICE ---
+                    with tempfile.TemporaryDirectory() as tmp_dir:
+                        docx_path = os.path.join(tmp_dir, "temp_aviso.docx")
+                        doc.save(docx_path)
                         
+                        try:
+                            # Ejecutar comando de Linux para convertir
+                            subprocess.run(['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', tmp_dir, docx_path], check=True)
+                            pdf_path = os.path.join(tmp_dir, "temp_aviso.pdf")
+                            
+                            with open(pdf_path, "rb") as f:
+                                st.session_state.pdf_aviso = f.read()
+                                
+                            # Configurar Botón de Correo
+                            dest = "intoxicacionesplaguicidas@redsalud.gob.cl"
+                            asunto = f"Aviso de Fumigación - {cliente_a}"
+                            cuerpo = (f"Señores Seremi,\n\nA través del presente, estamos notificando el tratamiento con gas fosfina, "
+                                      f"el cual se llevará a cabo el {fecha_fumi_a.strftime('%d-%m-%Y')} en las dependencias de {cliente_a}, "
+                                      f"ubicadas en {dir_a}.\n\nAdjunto documento oficial con los detalles técnicos del servicio.\n\n"
+                                      f"Sin otro particular,\nAtentamente,\n{repre_a}\nRentokil Initial Chile SpA")
+                            st.session_state.mailto_url = f"mailto:{dest}?subject={quote(asunto)}&body={quote(cuerpo)}"
+
+                        except Exception as pdf_error:
+                            st.error(f"❌ Falló la conversión a PDF. Asegúrate de haber subido el archivo 'packages.txt' con la palabra 'libreoffice' a tu GitHub. Detalles técnicos: {pdf_error}")
+
                     if mapa_final_usar and os.path.exists(mapa_final_usar): os.remove(mapa_final_usar)
                     if firma_path and os.path.exists(firma_path): os.remove(firma_path)
                     
@@ -690,15 +741,25 @@ elif st.session_state.app_mode == "AVISO":
                     st.error(f"Error generando el documento: {e}")
                     st.code(traceback.format_exc())
 
-    if st.session_state.get("word_aviso") is not None:
-        st.success("✅ Documento de Aviso/Notificación Generado Exitosamente")
+    if st.session_state.get("pdf_aviso") is not None:
+        st.success("✅ Documento de Aviso en PDF generado exitosamente.")
         st.download_button(
-            label="📄 DESCARGAR AVISO EN WORD",
-            data=st.session_state.word_aviso,
+            label="📥 DESCARGAR AVISO EN PDF",
+            data=st.session_state.pdf_aviso,
             file_name=st.session_state.fn_aviso,
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            mime="application/pdf",
             use_container_width=True
         )
+        
+        st.markdown(f"""
+            <a href="{st.session_state.mailto_url}" class="email-btn">
+                📧 ABRIR GMAIL (CON BORRADOR LISTO)
+            </a>
+            <p style='font-size: 0.85em; color: gray; text-align: center; margin-top: 5px;'>
+                * Una vez que se abra tu aplicación de correo, recuerda hacer clic en el 'clip' 📎 y adjuntar el PDF que acabas de descargar.
+            </p>
+        """, unsafe_allow_html=True)
+
 
 # ==============================================================================
 # LÓGICA: VISITA TÉCNICA 
@@ -762,7 +823,7 @@ elif st.session_state.app_mode == "VISITA":
 
     if st.button("🚀 GENERAR INFORME DE VISITA", use_container_width=True, type="primary"):
         try:
-            # Asignar nombre dinámico (Formato: DDMMYY)
+            # Asignar nombre dinámico
             cliente_limpio = clean_filename(cliente_v)
             fecha_str = datetime.date.today().strftime('%d%m%y')
             st.session_state.fn_visita = f"{fecha_str}_Visita_Previa_{cliente_limpio}.pdf"
@@ -920,7 +981,7 @@ elif st.session_state.app_mode == "MOLINOS":
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
         firma_path_guardada = None
         try:
-            # Asignar nombres dinámicos (Formato: DDMMYY)
+            # Asignar nombres dinámicos
             cliente_limpio = clean_filename(cliente)
             fecha_str = fecha_inf.strftime('%d%m%y')
             st.session_state.fn_informe = f"{fecha_str}_Informe_Molino_{cliente_limpio}.pdf"
@@ -1133,7 +1194,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
         firma_path_guardada = None
         try:
-            # Asignar nombres dinámicos (Formato: DDMMYY)
+            # Asignar nombres dinámicos
             cliente_limpio = clean_filename(cliente_e)
             fecha_str = fecha_e.strftime('%d%m%y')
             st.session_state.fn_informe = f"{fecha_str}_Informe_Estructuras_{cliente_limpio}.pdf"
@@ -1302,7 +1363,7 @@ elif st.session_state.app_mode == "TRABAJO":
     if st.button("🚀 GENERAR INFORME DE TRABAJO", use_container_width=True, type="primary"):
         if fotos_dialogo:
             try:
-                # Asignar nombre dinámico (Formato: DDMMYY)
+                # Asignar nombre dinámico
                 cliente_limpio = clean_filename(cli_d)
                 fecha_str = fec_d.strftime('%d%m%y')
                 st.session_state.fn_trabajo = f"{fecha_str}_Informe_Trabajo_{cliente_limpio}.pdf"
