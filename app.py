@@ -6,6 +6,7 @@ import datetime
 import os
 import tempfile
 import math
+import io
 from PIL import Image, ImageOps, ImageFile
 import traceback
 import gc
@@ -581,11 +582,12 @@ elif st.session_state.app_mode == "AVISO":
         
         # --- LÓGICA DE MAPA AUTOMÁTICO ---
         mapa_automatico_path = None
-        extensiones = ['.jpg', '.jpeg', '.png']
-        nombre_cliente_limpio = str(cliente_a).strip()
+        extensiones = ['.jpg', '.jpeg', '.png', '.HEIC', '.heic']
+        nombre_cliente_limpio_mapa = str(cliente_a).strip()
         
+        # Buscar en la carpeta mapas
         for ext in extensiones:
-            ruta_posible = os.path.join("mapas", nombre_cliente_limpio + ext)
+            ruta_posible = os.path.join("mapas", nombre_cliente_limpio_mapa + ext)
             if os.path.exists(ruta_posible):
                 mapa_automatico_path = ruta_posible
                 break
@@ -593,24 +595,24 @@ elif st.session_state.app_mode == "AVISO":
         col_img1, col_img2 = st.columns(2)
         with col_img1:
             if mapa_automatico_path:
-                st.success(f"✅ Mapa de **{nombre_cliente_limpio}** detectado automáticamente en la carpeta 'mapas/'.")
-                # El uploader se convierte en un plan B opcional
-                mapa_file = st.file_uploader("Subir un mapa diferente (Opcional)", type=["png", "jpg", "jpeg", "heic"])
+                st.success(f"✅ Mapa de **{nombre_cliente_limpio_mapa}** detectado automáticamente en la carpeta 'mapas/'.")
+                mapa_file = st.file_uploader("Subir un mapa diferente (Opcional, reemplaza al automático)", type=["png", "jpg", "jpeg", "heic"])
             else:
-                st.warning(f"⚠️ No se encontró el mapa automático para **{nombre_cliente_limpio}** en la carpeta 'mapas/'.")
+                st.warning(f"⚠️ No se encontró el mapa automático para **{nombre_cliente_limpio_mapa}** en la carpeta 'mapas/'.")
                 mapa_file = st.file_uploader("Sube el Mapa de Georreferencia manualmente", type=["png", "jpg", "jpeg", "heic"])
                 
         with col_img2:
             firma_aviso = st.file_uploader("Firma del Responsable Rentokil", type=["png", "jpg", "jpeg", "heic"])
 
-        if st.button("🚀 GENERAR AVISO AL SEREMI", use_container_width=True, type="primary"):
+        if st.button("🚀 GENERAR AVISO AL SEREMI (WORD)", use_container_width=True, type="primary"):
             if not os.path.exists("plantilla_aviso.docx"):
                 st.error("❌ No se encontró el archivo `plantilla_aviso.docx`. Por favor, súbelo a GitHub en la misma carpeta.")
             else:
                 try:
-                    # Asignar nombre dinámico y limpiarlo para Windows
+                    # Asignar nombre dinámico y limpiarlo para Windows (Formato: DDMMYY)
                     cliente_limpio_file = clean_filename(cliente_a)
-                    st.session_state.fn_aviso = f"{fecha_emision_a.strftime('%Y%m%d')}_Aviso_Seremi_{cliente_limpio_file}.docx"
+                    fecha_str = fecha_emision_a.strftime('%d%m%y')
+                    st.session_state.fn_aviso = f"{fecha_str}_Aviso_Seremi_{cliente_limpio_file}.docx"
                     
                     doc = DocxTemplate("plantilla_aviso.docx")
                     
@@ -655,17 +657,15 @@ elif st.session_state.app_mode == "AVISO":
                     mapa_final_usar = None
                     firma_path = None
                     
-                    # Decidir qué mapa usar (Prioriza el subido manualmente, si no, usa el automático)
+                    # Lógica para elegir qué mapa procesar (Manual primero, si no el Automático)
                     if mapa_file:
                         mapa_final_usar, _, _ = procesar_imagen_full(mapa_file)
                     elif mapa_automatico_path:
-                        # Si usamos la ruta automática, simulamos que es un archivo subido abriéndolo
                         with open(mapa_automatico_path, "rb") as f_auto:
-                            # Creamos un objeto temporal tipo BytesIO para que procesar_imagen_full lo entienda
-                            import io
                             mapa_bytes = io.BytesIO(f_auto.read())
                             mapa_final_usar, _, _ = procesar_imagen_full(mapa_bytes)
                             
+                    # Inyectar el mapa si existe
                     if mapa_final_usar:
                         context['mapa_img'] = InlineImage(doc, mapa_final_usar, width=Mm(135))
                             
@@ -762,9 +762,10 @@ elif st.session_state.app_mode == "VISITA":
 
     if st.button("🚀 GENERAR INFORME DE VISITA", use_container_width=True, type="primary"):
         try:
-            # Asignar nombre dinámico
+            # Asignar nombre dinámico (Formato: DDMMYY)
             cliente_limpio = clean_filename(cliente_v)
-            st.session_state.fn_visita = f"{datetime.date.today().strftime('%Y%m%d')}_Visita_Previa_{cliente_limpio}.pdf"
+            fecha_str = datetime.date.today().strftime('%d%m%y')
+            st.session_state.fn_visita = f"{fecha_str}_Visita_Previa_{cliente_limpio}.pdf"
 
             pdf = InformePDF()
             pdf.is_visita = True
@@ -919,10 +920,11 @@ elif st.session_state.app_mode == "MOLINOS":
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
         firma_path_guardada = None
         try:
-            # Asignar nombres dinámicos
+            # Asignar nombres dinámicos (Formato: DDMMYY)
             cliente_limpio = clean_filename(cliente)
-            st.session_state.fn_informe = f"{fecha_inf.strftime('%Y%m%d')}_Informe_Molino_{cliente_limpio}.pdf"
-            st.session_state.fn_cert = f"{fecha_inf.strftime('%Y%m%d')}_Certificado_Molino_{cliente_limpio}.pdf"
+            fecha_str = fecha_inf.strftime('%d%m%y')
+            st.session_state.fn_informe = f"{fecha_str}_Informe_Molino_{cliente_limpio}.pdf"
+            st.session_state.fn_cert = f"{fecha_str}_Certificado_Molino_{cliente_limpio}.pdf"
 
             df_m_clean = df_m_mol_val.copy()
             df_m_clean['Fecha_str'] = df_m_clean['Fecha'].astype(str).str.strip().str.lower()
@@ -1131,10 +1133,11 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
         firma_path_guardada = None
         try:
-            # Asignar nombres dinámicos
+            # Asignar nombres dinámicos (Formato: DDMMYY)
             cliente_limpio = clean_filename(cliente_e)
-            st.session_state.fn_informe = f"{fecha_e.strftime('%Y%m%d')}_Informe_Estructuras_{cliente_limpio}.pdf"
-            st.session_state.fn_cert = f"{fecha_e.strftime('%Y%m%d')}_Certificado_Estructuras_{cliente_limpio}.pdf"
+            fecha_str = fecha_e.strftime('%d%m%y')
+            st.session_state.fn_informe = f"{fecha_str}_Informe_Estructuras_{cliente_limpio}.pdf"
+            st.session_state.fn_cert = f"{fecha_str}_Certificado_Estructuras_{cliente_limpio}.pdf"
 
             firma_path_guardada = procesar_firma(firma_e) if firma_e else ('firma.png' if os.path.exists('firma.png') else None)
             
@@ -1299,9 +1302,10 @@ elif st.session_state.app_mode == "TRABAJO":
     if st.button("🚀 GENERAR INFORME DE TRABAJO", use_container_width=True, type="primary"):
         if fotos_dialogo:
             try:
-                # Asignar nombre dinámico
+                # Asignar nombre dinámico (Formato: DDMMYY)
                 cliente_limpio = clean_filename(cli_d)
-                st.session_state.fn_trabajo = f"{fec_d.strftime('%Y%m%d')}_Informe_Trabajo_{cliente_limpio}.pdf"
+                fecha_str = fec_d.strftime('%d%m%y')
+                st.session_state.fn_trabajo = f"{fecha_str}_Informe_Trabajo_{cliente_limpio}.pdf"
 
                 pdf = InformePDF()
                 pdf.add_page()
