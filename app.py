@@ -14,7 +14,7 @@ import traceback
 import gc
 import numpy as np
 
-# --- NUEVAS LIBRERÍAS PARA PLANTILLAS WORD ---
+# --- LIBRERÍAS PARA PLANTILLAS WORD ---
 try:
     from docxtpl import DocxTemplate, InlineImage
     from docx.shared import Mm
@@ -61,14 +61,25 @@ st.markdown("""
     button[kind="secondary"]:hover {
         background-color: #008BBF !important;
         border-color: #008BBF !important;
-        color: white !important;
     }
     .email-btn {
-        display: inline-flex; align-items: center; justify-content: center;
-        background-color: #4285F4; color: white; padding: 10px 20px;
-        text-decoration: none; border-radius: 5px; font-weight: bold; width: 100%; text-align: center; margin-top: 10px;
+        display: inline-flex; 
+        align-items: center; 
+        justify-content: center;
+        background-color: #4285F4; 
+        color: white; 
+        padding: 10px 20px;
+        text-decoration: none; 
+        border-radius: 5px; 
+        font-weight: bold; 
+        width: 100%; 
+        text-align: center; 
+        margin-top: 10px;
     }
-    .email-btn:hover { background-color: #3367D6; color: white; }
+    .email-btn:hover {
+        background-color: #3367D6; 
+        color: white;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -195,6 +206,7 @@ else:
 lista_limpia_sucursales = sorted([s for s in LISTA_SUCURSALES_SET if s and s != 'NAN'])
 LISTA_SUCURSALES = ["TODAS"] + lista_limpia_sucursales
 
+# Forzar el valor por defecto si la lista de sucursales se generó
 if "SANTIAGO" in lista_limpia_sucursales and st.session_state.sucursal_filtro not in LISTA_SUCURSALES:
     st.session_state.sucursal_filtro = "SANTIAGO"
 elif lista_limpia_sucursales and st.session_state.sucursal_filtro not in LISTA_SUCURSALES:
@@ -267,6 +279,7 @@ LISTA_REPRESENTANTES = list(DATABASE_REPRESENTANTES.keys())
 
 # --- FUNCIONES UTILITARIAS Y DE LIMPIEZA ---
 def clean_filename(name):
+    """Limpia el nombre del cliente para que sea un nombre de archivo válido"""
     invalid_chars = '<>:"/\\|?*'
     name_clean = str(name)
     for char in invalid_chars:
@@ -513,7 +526,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "TRABAJO"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN AL SEREMI (CONVERSIÓN PDF + GMAIL MAILTO)
+# LÓGICA: AVISO DE FUMIGACIÓN AL SEREMI (WORD -> PDF -> EMAIL)
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     st.title("📢 Generador de Aviso al Seremi")
@@ -879,7 +892,7 @@ elif st.session_state.app_mode == "VISITA":
         except Exception as e: st.error(f"Error al generar visita: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA: MOLINOS (CON MODIFICACIÓN DE SONDEOS X-AM 8000)
+# LÓGICA: MOLINOS (CON REEMPLAZO DE PLANTA POR DIRECCIÓN Y REFUERZO DE ÍTEM IV)
 # ==============================================================================
 elif st.session_state.app_mode == "MOLINOS":
     st.title("🏭 Informe y Certificado Molinos")
@@ -947,12 +960,10 @@ elif st.session_state.app_mode == "MOLINOS":
     dosis_final = total_g / volumen_total if volumen_total > 0 else 0
 
     st.subheader("V. Mediciones")
-    # --- NUEVO SELECTOR DE EQUIPO X-AM 8000 ---
     serie_xam = st.selectbox(
         "Equipo de Medición (Serie X-AM 8000)", 
         ["ARNF-0043", "ARNF-0050", "ARNM-0023", "ARPK-0020", "ARPL-0030"]
     )
-    # ------------------------------------------
     
     df_m_mol_val = st.data_editor(st.session_state.df_m_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_m")
     fotos_meds = st.file_uploader("Evidencia de Monitoreo (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_m_m")
@@ -981,7 +992,7 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.add_page()
             pdf.set_font("Arial", "", 11)
             pdf.cell(35, 7, "Cliente:", 0); pdf.cell(0, 7, str(cliente), 0, ln=1)
-            pdf.cell(35, 7, "Planta:", 0); pdf.cell(0, 7, f"{planta} - {direccion}", 0, ln=1)
+            pdf.cell(35, 7, "Dirección:", 0); pdf.cell(0, 7, str(direccion), 0, ln=1) # CAMBIO 1: Reemplazar planta por Dirección
             pdf.cell(35, 7, "Tratamiento:", 0); pdf.cell(0, 7, f"{tipo_trat} - Plaga: {plaga}", 0, ln=1)
             pdf.cell(35, 7, "Fecha:", 0); pdf.cell(0, 7, format_fecha_es(fecha_inf), 0, ln=1)
             
@@ -1022,7 +1033,7 @@ elif st.session_state.app_mode == "MOLINOS":
             texto_mediciones = (
                 f"Para las mediciones de gas Fosfina durante toda la fumigación se colocaron sondas de muestreo de gas en los siguientes pisos del "
                 f"molino: {pisos_str}. Las sondas de muestreo son micro tubos de riego de polietileno de color negro y de un diámetro de 4 mm. "
-                f"La disposición final de estas sondas en cada piso, fue determinada por CC de {planta}.\n\n"
+                f"La disposición final de estas sondas en cada piso, fue determinada por control de calidad.\n\n" # CAMBIO 2: Determinada por control de calidad
                 "Se acordó con el Molino, la siguiente frecuencia de medición:\n"
                 "- Medición cada 2 horas, desde la inyección del molino hasta alcanzar las 200 ppm.\n"
                 "- Una vez alcanzadas las 300 ppm, las mediciones se realizaron a las 7:00, 13:00, 19:00 y 24:00 horas.\n\n"
@@ -1033,9 +1044,9 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.set_font("Arial", "", 10)
             pdf.multi_cell(0, 5, texto_mediciones)
             pdf.ln(5)
-            # -------------------------------------------------------------
 
-            fig, ax = plt.subplots(figsize=(10, 5))
+            # --- GENERACIÓN DEL GRÁFICO (CAMBIO 3: Gráfico más grande 10x6) ---
+            fig, ax = plt.subplots(figsize=(10, 6))
             e_x = df_m_clean["Fecha"].astype(str) + "\n" + df_m_clean["Hora"].astype(str)
             h_g = False
             
@@ -1052,7 +1063,12 @@ elif st.session_state.app_mode == "MOLINOS":
             
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_g:
                 fig.savefig(tmp_g.name, dpi=300); pdf.image(tmp_g.name, x=10, w=190)
-            pdf.ln(5)
+            
+            # SALTO DE PÁGINA INTELIGENTE: Si queda poco espacio para la tabla, saltar.
+            if pdf.get_y() > 180:
+                pdf.add_page()
+            else:
+                pdf.ln(5)
             
             cols_list = list(df_m_clean.columns)
             pdf.tabla(cols_list, [[str(x) for x in r] for _, r in df_m_clean.iterrows()], [25, 15] + [25]* (len(cols_list)-2))
@@ -1324,7 +1340,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             p_limpio = p_sel[:30]+"..." if len(p_sel)>30 else p_sel
             cert.t_cert(["Área Tratada", "Volumen (m3)", "Fecha y Hora Fumigación / Ventilación"], [[p_limpio, f"{t_v:.1f} m3", f"Inicio: {f_ini_e.strftime('%d-%m-%Y')} - {h_ini_e} Hrs\nTérmino: {f_ter_e.strftime('%d-%m-%Y')} - {h_ter_e} Hrs"]], [50, 30, 110])
             cert.t_cert(["Tiempo Exp.", "Fumigante Usado", "Lugar Fumigación"], [[f"{h_exp_e:.0f} Horas", ingrediente, direccion_e]], [30, 60, 100])
-            cert.t_cert(["Dosis (g/m3)", "Concentración Promedio", "Informe Ref."], [[f"{dosis_promedio:.2f}", f"{promedio_ppm:.0f} PPM", inf_ref_est]], [50, 70, 70])
+            cert.t_cert(["Dosis (g/m3)", "Concentración Promedio", "Informe Ref."], [[f"{dosis_promedio:.2f}", f"{ppm_e:.0f} PPM", inf_ref_est]], [50, 70, 70])
             
             cert.ln(10); cert.set_font("Arial", "", 10)
             cert.multi_cell(0, 6, f"Se extiende el presente certificado N° {num_cert}, con fecha {format_fecha_es(fecha_e)}, al interesado para los efectos que estime conveniente.")
@@ -1369,7 +1385,6 @@ elif st.session_state.app_mode == "TRABAJO":
     if st.button("🚀 GENERAR INFORME DE TRABAJO", use_container_width=True, type="primary"):
         if fotos_dialogo:
             try:
-                # Asignar nombre dinámico
                 cliente_limpio = clean_filename(cli_d)
                 fecha_str = fec_d.strftime('%d%m%y')
                 st.session_state.fn_trabajo = f"{fecha_str}_Informe_Trabajo_{cliente_limpio}.pdf"
@@ -1383,7 +1398,6 @@ elif st.session_state.app_mode == "TRABAJO":
                 
                 pdf.tabla_moderna(["CLIENTE / RAZÓN SOCIAL", "DIRECCIÓN", "FECHA"], [[str(cli_d), str(dir_d), format_fecha_es(fec_d)]], [80, 70, 40], color=COLOR_PRIMARIO)
                 
-                # --- NUEVO CUADRO DETALLE DE LABORES ---
                 pdf.set_font("Arial", "B", 9)
                 pdf.set_fill_color(*COLOR_PRIMARIO)
                 pdf.set_text_color(255, 255, 255)
@@ -1397,7 +1411,6 @@ elif st.session_state.app_mode == "TRABAJO":
                 texto_detalles = str(detalles_d).strip() if str(detalles_d).strip() else "Sin observaciones registradas."
                 pdf.multi_cell(190, 5, texto_detalles, border='B', align='L')
                 pdf.ln(5)
-                # ----------------------------------------
                 
                 progress_text = "Procesando imágenes. Por favor espera..."
                 my_bar = st.progress(0, text=progress_text)
