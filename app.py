@@ -64,23 +64,11 @@ st.markdown("""
         color: white !important;
     }
     .email-btn {
-        display: inline-flex; 
-        align-items: center; 
-        justify-content: center;
-        background-color: #4285F4; 
-        color: white; 
-        padding: 10px 20px;
-        text-decoration: none; 
-        border-radius: 5px; 
-        font-weight: bold; 
-        width: 100%; 
-        text-align: center; 
-        margin-top: 10px;
+        display: inline-flex; align-items: center; justify-content: center;
+        background-color: #4285F4; color: white; padding: 10px 20px;
+        text-decoration: none; border-radius: 5px; font-weight: bold; width: 100%; text-align: center; margin-top: 10px;
     }
-    .email-btn:hover {
-        background-color: #3367D6; 
-        color: white;
-    }
+    .email-btn:hover { background-color: #3367D6; color: white; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -132,7 +120,7 @@ if "df_m_est" not in st.session_state:
 
 
 # ==============================================================================
-# LECTURA DINÁMICA Y LIMPIEZA PROFUNDA (PARA LOS 4 CLIENTES FANTASMA)
+# LECTURA DINÁMICA Y LIMPIEZA PROFUNDA NUCLEAR
 # ==============================================================================
 DATABASE_COMBINADA = {}
 DATABASE_REPRESENTANTES = {}
@@ -165,7 +153,7 @@ for file in os.listdir('.'):
             st.error(f"⚠️ Error intentando leer el archivo {file}: {e}")
 
 if not df_clientes.empty:
-    df_clientes = df_clientes.dropna(how='all') # Elimina filas 100% vacías
+    df_clientes = df_clientes.dropna(how='all') 
     
     c_cliente = obtener_nombre_columna(df_clientes, ['razon', 'cliente', 'planta', 'social'])
     c_rut = obtener_nombre_columna(df_clientes, ['rut'])
@@ -207,7 +195,6 @@ else:
 lista_limpia_sucursales = sorted([s for s in LISTA_SUCURSALES_SET if s and s != 'NAN'])
 LISTA_SUCURSALES = ["TODAS"] + lista_limpia_sucursales
 
-# Forzar el valor por defecto si la lista de sucursales se generó
 if "SANTIAGO" in lista_limpia_sucursales and st.session_state.sucursal_filtro not in LISTA_SUCURSALES:
     st.session_state.sucursal_filtro = "SANTIAGO"
 elif lista_limpia_sucursales and st.session_state.sucursal_filtro not in LISTA_SUCURSALES:
@@ -236,7 +223,6 @@ with st.sidebar:
 # --- APLICAR FILTROS A LAS BASES DE DATOS ---
 filtro_actual = st.session_state.sucursal_filtro
 
-# Llenar Diccionario de Clientes
 if not df_clientes.empty and c_cliente is not None:
     if filtro_actual != "TODAS" and 'Sucursal_Filtro' in df_clientes.columns:
         df_c_filt = df_clientes[df_clientes['Sucursal_Filtro'] == filtro_actual]
@@ -258,7 +244,6 @@ else:
 
 DATABASE_COMBINADA["OTRO"] = {"cliente": "", "rut": "", "direccion": "", "volumen": 0}
 
-# Llenar Diccionario de Técnicos
 if not df_tecnicos.empty and t_nombre is not None:
     if filtro_actual != "TODAS" and 'Sucursal_Filtro' in df_tecnicos.columns:
         df_t_filt = df_tecnicos[df_tecnicos['Sucursal_Filtro'] == filtro_actual]
@@ -282,7 +267,6 @@ LISTA_REPRESENTANTES = list(DATABASE_REPRESENTANTES.keys())
 
 # --- FUNCIONES UTILITARIAS Y DE LIMPIEZA ---
 def clean_filename(name):
-    """Limpia el nombre del cliente para que sea un nombre de archivo válido"""
     invalid_chars = '<>:"/\\|?*'
     name_clean = str(name)
     for char in invalid_chars:
@@ -348,7 +332,7 @@ def procesar_firma(uploaded_file):
     except: return None
 
 # ==============================================================================
-# CLASES PDF ORIGINALES
+# CLASES PDF ORIGINALES Y COMPLETAS
 # ==============================================================================
 class InformePDF(FPDF):
     def rounded_rect(self, x, y, w, h, r, style=''):
@@ -487,7 +471,6 @@ if st.session_state.app_mode == "HOME":
     with col_logo2:
         if os.path.exists("logo.png"): st.image("logo.png", use_container_width=True)
         
-        # --- SELECTOR DE SUCURSAL CENTRADO EN PANTALLA PRINCIPAL ---
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("""
             <div style='text-align: center; color: #E30613; font-size: 1.2em; font-weight: bold; margin-bottom: 5px;'>
@@ -506,7 +489,6 @@ if st.session_state.app_mode == "HOME":
             st.rerun()
             
         st.markdown("<br>", unsafe_allow_html=True)
-        # -------------------------------------------------------------
         
     st.markdown("---")
     
@@ -531,7 +513,7 @@ if st.session_state.app_mode == "HOME":
             st.session_state.app_mode = "TRABAJO"; st.rerun()
 
 # ==============================================================================
-# LÓGICA: AVISO DE FUMIGACIÓN (PDF + EMAIL)
+# LÓGICA: AVISO DE FUMIGACIÓN AL SEREMI (CONVERSIÓN PDF + GMAIL MAILTO)
 # ==============================================================================
 elif st.session_state.app_mode == "AVISO":
     st.title("📢 Generador de Aviso al Seremi")
@@ -615,7 +597,6 @@ elif st.session_state.app_mode == "AVISO":
 
         st.subheader("🗺️ V. Mapa y Firma")
         
-        # --- LÓGICA DE MAPA AUTOMÁTICO ---
         mapa_automatico_path = None
         extensiones = ['.jpg', '.jpeg', '.png', '.HEIC', '.heic']
         nombre_cliente_limpio_mapa = str(cliente_a).strip()
@@ -643,7 +624,6 @@ elif st.session_state.app_mode == "AVISO":
                 st.error("❌ No se encontró el archivo `plantilla_aviso.docx`. Por favor, súbelo a GitHub en la misma carpeta.")
             else:
                 try:
-                    # Asignar nombre dinámico y limpiarlo para Windows (Formato: DDMMYY)
                     cliente_limpio_file = clean_filename(cliente_a)
                     fecha_str = fecha_emision_a.strftime('%d%m%y')
                     st.session_state.fn_aviso = f"{fecha_str}_Aviso_Seremi_{cliente_limpio_file}.pdf"
@@ -708,20 +688,17 @@ elif st.session_state.app_mode == "AVISO":
 
                     doc.render(context)
                     
-                    # --- CONVERSIÓN A PDF CON LIBREOFFICE ---
                     with tempfile.TemporaryDirectory() as tmp_dir:
                         docx_path = os.path.join(tmp_dir, "temp_aviso.docx")
                         doc.save(docx_path)
                         
                         try:
-                            # Ejecutar comando de Linux para convertir
                             subprocess.run(['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', tmp_dir, docx_path], check=True)
                             pdf_path = os.path.join(tmp_dir, "temp_aviso.pdf")
                             
                             with open(pdf_path, "rb") as f:
                                 st.session_state.pdf_aviso = f.read()
                                 
-                            # Configurar Botón de Correo
                             dest = "intoxicacionesplaguicidas@redsalud.gob.cl"
                             asunto = f"Aviso de Fumigación - {cliente_a}"
                             cuerpo = (f"Señores Seremi,\n\nA través del presente, estamos notificando el tratamiento con gas fosfina, "
@@ -752,7 +729,7 @@ elif st.session_state.app_mode == "AVISO":
         )
         
         st.markdown(f"""
-            <a href="{st.session_state.mailto_url}" class="email-btn">
+            <a href="{st.session_state.mailto_url}" class="email-btn" target="_blank">
                 📧 ABRIR GMAIL (CON BORRADOR LISTO)
             </a>
             <p style='font-size: 0.85em; color: gray; text-align: center; margin-top: 5px;'>
@@ -823,7 +800,6 @@ elif st.session_state.app_mode == "VISITA":
 
     if st.button("🚀 GENERAR INFORME DE VISITA", use_container_width=True, type="primary"):
         try:
-            # Asignar nombre dinámico
             cliente_limpio = clean_filename(cliente_v)
             fecha_str = datetime.date.today().strftime('%d%m%y')
             st.session_state.fn_visita = f"{fecha_str}_Visita_Previa_{cliente_limpio}.pdf"
@@ -903,7 +879,7 @@ elif st.session_state.app_mode == "VISITA":
         except Exception as e: st.error(f"Error al generar visita: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA: MOLINOS
+# LÓGICA: MOLINOS (CON MODIFICACIÓN DE SONDEOS X-AM 8000)
 # ==============================================================================
 elif st.session_state.app_mode == "MOLINOS":
     st.title("🏭 Informe y Certificado Molinos")
@@ -971,6 +947,13 @@ elif st.session_state.app_mode == "MOLINOS":
     dosis_final = total_g / volumen_total if volumen_total > 0 else 0
 
     st.subheader("V. Mediciones")
+    # --- NUEVO SELECTOR DE EQUIPO X-AM 8000 ---
+    serie_xam = st.selectbox(
+        "Equipo de Medición (Serie X-AM 8000)", 
+        ["ARNF-0043", "ARNF-0050", "ARNM-0023", "ARPK-0020", "ARPL-0030"]
+    )
+    # ------------------------------------------
+    
     df_m_mol_val = st.data_editor(st.session_state.df_m_mol, num_rows="dynamic", use_container_width=True, key="edi_mol_m")
     fotos_meds = st.file_uploader("Evidencia de Monitoreo (Opcional)", accept_multiple_files=True, type=['png','jpg','jpeg','heic'], key="f_m_m")
 
@@ -981,7 +964,6 @@ elif st.session_state.app_mode == "MOLINOS":
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
         firma_path_guardada = None
         try:
-            # Asignar nombres dinámicos
             cliente_limpio = clean_filename(cliente)
             fecha_str = fecha_inf.strftime('%d%m%y')
             st.session_state.fn_informe = f"{fecha_str}_Informe_Molino_{cliente_limpio}.pdf"
@@ -1027,7 +1009,32 @@ elif st.session_state.app_mode == "MOLINOS":
             if fotos_dosis: pdf.galeria(fotos_dosis, "Evidencia de Dosificación:")
             pdf.set_font("Arial", "B", 10); pdf.cell(0, 8, f"DOSIS FINAL: {dosis_final:.2f} g/m3", ln=1, align="R")
             
+            # --- LÓGICA DE EXTRACCIÓN Y REDACCIÓN DEL TEXTO DE SONDEOS ---
+            pisos_activos = []
+            for _, row in df_d_mol_val.iterrows():
+                b_val = clean_number(row.get("Bandejas", 0))
+                m_val = clean_number(row.get("Mini-Ropes", 0))
+                if b_val > 0 or m_val > 0:
+                    pisos_activos.append(str(row.get("Piso", "")))
+            
+            pisos_str = ", ".join(pisos_activos) if pisos_activos else "las áreas tratadas"
+            
+            texto_mediciones = (
+                f"Para las mediciones de gas Fosfina durante toda la fumigación se colocaron sondas de muestreo de gas en los siguientes pisos del "
+                f"molino: {pisos_str}. Las sondas de muestreo son micro tubos de riego de polietileno de color negro y de un diámetro de 4 mm. "
+                f"La disposición final de estas sondas en cada piso, fue determinada por CC de {planta}.\n\n"
+                "Se acordó con el Molino, la siguiente frecuencia de medición:\n"
+                "- Medición cada 2 horas, desde la inyección del molino hasta alcanzar las 200 ppm.\n"
+                "- Una vez alcanzadas las 300 ppm, las mediciones se realizaron a las 7:00, 13:00, 19:00 y 24:00 horas.\n\n"
+                f"Las mediciones de fosfina se realizaron con uso de gas tester digital X-AM 8000 (serie {serie_xam})."
+            )
+            
             pdf.t_seccion("IV", "CONTROL DE CONCENTRACIÓN (PPM)", force=True)
+            pdf.set_font("Arial", "", 10)
+            pdf.multi_cell(0, 5, texto_mediciones)
+            pdf.ln(5)
+            # -------------------------------------------------------------
+
             fig, ax = plt.subplots(figsize=(10, 5))
             e_x = df_m_clean["Fecha"].astype(str) + "\n" + df_m_clean["Hora"].astype(str)
             h_g = False
@@ -1194,7 +1201,6 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
     if st.button("🚀 GENERAR INFORME Y CERTIFICADO", use_container_width=True, type="primary"):
         firma_path_guardada = None
         try:
-            # Asignar nombres dinámicos
             cliente_limpio = clean_filename(cliente_e)
             fecha_str = fecha_e.strftime('%d%m%y')
             st.session_state.fn_informe = f"{fecha_str}_Informe_Estructuras_{cliente_limpio}.pdf"
