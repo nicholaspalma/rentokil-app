@@ -14,7 +14,7 @@ import traceback
 import gc
 import numpy as np
 
-# --- LIBRERÍAS PARA PLANTILLAS WORD ---
+# --- NUEVAS LIBRERÍAS PARA PLANTILLAS WORD ---
 try:
     from docxtpl import DocxTemplate, InlineImage
     from docx.shared import Mm
@@ -61,25 +61,14 @@ st.markdown("""
     button[kind="secondary"]:hover {
         background-color: #008BBF !important;
         border-color: #008BBF !important;
+        color: white !important;
     }
     .email-btn {
-        display: inline-flex; 
-        align-items: center; 
-        justify-content: center;
-        background-color: #4285F4; 
-        color: white; 
-        padding: 10px 20px;
-        text-decoration: none; 
-        border-radius: 5px; 
-        font-weight: bold; 
-        width: 100%; 
-        text-align: center; 
-        margin-top: 10px;
+        display: inline-flex; align-items: center; justify-content: center;
+        background-color: #4285F4; color: white; padding: 10px 20px;
+        text-decoration: none; border-radius: 5px; font-weight: bold; width: 100%; text-align: center; margin-top: 10px;
     }
-    .email-btn:hover {
-        background-color: #3367D6; 
-        color: white;
-    }
+    .email-btn:hover { background-color: #3367D6; color: white; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -206,7 +195,6 @@ else:
 lista_limpia_sucursales = sorted([s for s in LISTA_SUCURSALES_SET if s and s != 'NAN'])
 LISTA_SUCURSALES = ["TODAS"] + lista_limpia_sucursales
 
-# Forzar el valor por defecto si la lista de sucursales se generó
 if "SANTIAGO" in lista_limpia_sucursales and st.session_state.sucursal_filtro not in LISTA_SUCURSALES:
     st.session_state.sucursal_filtro = "SANTIAGO"
 elif lista_limpia_sucursales and st.session_state.sucursal_filtro not in LISTA_SUCURSALES:
@@ -279,7 +267,6 @@ LISTA_REPRESENTANTES = list(DATABASE_REPRESENTANTES.keys())
 
 # --- FUNCIONES UTILITARIAS Y DE LIMPIEZA ---
 def clean_filename(name):
-    """Limpia el nombre del cliente para que sea un nombre de archivo válido"""
     invalid_chars = '<>:"/\\|?*'
     name_clean = str(name)
     for char in invalid_chars:
@@ -302,47 +289,70 @@ def clean_number(value):
     return 0.0
 
 def procesar_imagen(uploaded_file):
+    """Procesa imagen con caché de bytes y destrucción segura"""
+    tmp_name = None
     try:
-        uploaded_file.seek(0)
-        image = Image.open(uploaded_file)
+        file_bytes = uploaded_file.getvalue() if hasattr(uploaded_file, 'getvalue') else uploaded_file.read()
+        image = Image.open(io.BytesIO(file_bytes))
         image = ImageOps.exif_transpose(image)
         if image.mode != 'RGB': image = image.convert('RGB')
         image_fixed = ImageOps.fit(image, (800, 600), method=Image.Resampling.LANCZOS, centering=(0.5, 0.95))
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        image_fixed.save(tmp.name, format='JPEG', quality=85, optimize=True)
-        image.close(); image_fixed.close(); del image; del image_fixed; gc.collect()
-        return tmp.name
-    except: return None
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+            tmp_name = tmp.name
+            
+        image_fixed.save(tmp_name, format='JPEG', quality=85, optimize=True)
+        image.close(); image_fixed.close(); gc.collect()
+        return tmp_name
+    except Exception as e:
+        if tmp_name and os.path.exists(tmp_name):
+            os.remove(tmp_name)
+        return None
 
 def procesar_imagen_full(uploaded_file):
+    """Procesa imagen original con caché de bytes y destrucción segura"""
+    tmp_name = None
     try:
-        if isinstance(uploaded_file, io.BytesIO): 
-            uploaded_file.seek(0)
-        image = Image.open(uploaded_file)
+        file_bytes = uploaded_file.getvalue() if hasattr(uploaded_file, 'getvalue') else uploaded_file.read()
+        image = Image.open(io.BytesIO(file_bytes))
         image = ImageOps.exif_transpose(image)
         if image.mode != 'RGB': image = image.convert('RGB')
         if image.width > 1600 or image.height > 1600:
             image.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
         w, h = image.size
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        image.save(tmp.name, format='JPEG', quality=85, optimize=True)
-        image.close(); del image; gc.collect()
-        return tmp.name, w, h
-    except: return None, 0, 0
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+            tmp_name = tmp.name
+            
+        image.save(tmp_name, format='JPEG', quality=85, optimize=True)
+        image.close(); gc.collect()
+        return tmp_name, w, h
+    except Exception as e:
+        if tmp_name and os.path.exists(tmp_name):
+            os.remove(tmp_name)
+        return None, 0, 0
 
 def procesar_firma(uploaded_file):
+    """Procesa firma PNG con caché de bytes y destrucción segura"""
+    tmp_name = None
     try:
-        uploaded_file.seek(0)
-        image = Image.open(uploaded_file)
+        file_bytes = uploaded_file.getvalue() if hasattr(uploaded_file, 'getvalue') else uploaded_file.read()
+        image = Image.open(io.BytesIO(file_bytes))
         image = ImageOps.exif_transpose(image)
         image = image.convert('RGBA')
         bg = Image.new('RGB', image.size, (255, 255, 255))
         bg.paste(image, mask=image.split()[3])
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        bg.save(tmp.name, format='JPEG', quality=90)
-        image.close(); del image; gc.collect()
-        return tmp.name
-    except: return None
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+            tmp_name = tmp.name
+            
+        bg.save(tmp_name, format='JPEG', quality=90)
+        image.close(); gc.collect()
+        return tmp_name
+    except Exception as e:
+        if tmp_name and os.path.exists(tmp_name):
+            os.remove(tmp_name)
+        return None
 
 # ==============================================================================
 # CLASES PDF ORIGINALES Y COMPLETAS
@@ -424,11 +434,14 @@ class InformePDF(FPDF):
         for i, f in enumerate(fotos):
             tmp = procesar_imagen(f)
             if tmp:
-                if self.get_y() > 210: self.add_page(); self.set_y(45); i_mod = 0
-                else: i_mod = i % 2
-                if i_mod == 0: y_act = self.get_y(); self.image(tmp, x=10, y=y_act, w=90, h=65)
-                else: self.image(tmp, x=110, y=y_act, w=90, h=65); self.ln(70)
-                os.remove(tmp)
+                try:
+                    if self.get_y() > 210: self.add_page(); self.set_y(45); i_mod = 0
+                    else: i_mod = i % 2
+                    if i_mod == 0: y_act = self.get_y(); self.image(tmp, x=10, y=y_act, w=90, h=65)
+                    else: self.image(tmp, x=110, y=y_act, w=90, h=65); self.ln(70)
+                finally:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
         if len(fotos) % 2 != 0: self.ln(70)
 
 class CertificadoPDF(FPDF):
@@ -824,16 +837,19 @@ elif st.session_state.app_mode == "VISITA":
             if foto_portada:
                 tmp_portada, w, h = procesar_imagen_full(foto_portada)
                 if tmp_portada:
-                    ratio = w / h
-                    max_w = 190
-                    calc_h = max_w / ratio
-                    if calc_h > 120: 
-                        calc_h = 120
-                        max_w = calc_h * ratio
-                    pdf_x = 10 + (190 - max_w) / 2
-                    pdf.image(tmp_portada, x=pdf_x, y=pdf.get_y(), w=max_w, h=calc_h)
-                    pdf.set_y(pdf.get_y() + calc_h + 10)
-                    os.remove(tmp_portada)
+                    try:
+                        ratio = w / h
+                        max_w = 190
+                        calc_h = max_w / ratio
+                        if calc_h > 120: 
+                            calc_h = 120
+                            max_w = calc_h * ratio
+                        pdf_x = 10 + (190 - max_w) / 2
+                        pdf.image(tmp_portada, x=pdf_x, y=pdf.get_y(), w=max_w, h=calc_h)
+                        pdf.set_y(pdf.get_y() + calc_h + 10)
+                    finally:
+                        if os.path.exists(tmp_portada):
+                            os.remove(tmp_portada)
 
             pdf.set_font("Arial", "B", 10)
             pdf.set_fill_color(*COLOR_CELESTE_CLARO)
@@ -892,7 +908,7 @@ elif st.session_state.app_mode == "VISITA":
         except Exception as e: st.error(f"Error al generar visita: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
-# LÓGICA: MOLINOS (CON REEMPLAZO DE PLANTA POR DIRECCIÓN Y REFUERZO DE ÍTEM IV)
+# LÓGICA: MOLINOS
 # ==============================================================================
 elif st.session_state.app_mode == "MOLINOS":
     st.title("🏭 Informe y Certificado Molinos")
@@ -992,13 +1008,13 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.add_page()
             pdf.set_font("Arial", "", 11)
             pdf.cell(35, 7, "Cliente:", 0); pdf.cell(0, 7, str(cliente), 0, ln=1)
-            pdf.cell(35, 7, "Dirección:", 0); pdf.cell(0, 7, str(direccion), 0, ln=1) # CAMBIO 1: Reemplazar planta por Dirección
+            pdf.cell(35, 7, "Dirección:", 0); pdf.cell(0, 7, str(direccion), 0, ln=1) 
             pdf.cell(35, 7, "Tratamiento:", 0); pdf.cell(0, 7, f"{tipo_trat} - Plaga: {plaga}", 0, ln=1)
             pdf.cell(35, 7, "Fecha:", 0); pdf.cell(0, 7, format_fecha_es(fecha_inf), 0, ln=1)
             
             pdf.t_seccion("I", "PLAN DE SELLADO Y LIMPIEZA")
             pdf.set_font("Arial", "", 10)
-            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l_mol} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev_mol} a las {hora_rev_mol} horas.")
+            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l_mol} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev_mol} a las {hora_rev_mol} hours.")
             pdf.ln(3)
             
             if hay_obs_mol and txt_obs_mol:
@@ -1020,7 +1036,6 @@ elif st.session_state.app_mode == "MOLINOS":
             if fotos_dosis: pdf.galeria(fotos_dosis, "Evidencia de Dosificación:")
             pdf.set_font("Arial", "B", 10); pdf.cell(0, 8, f"DOSIS FINAL: {dosis_final:.2f} g/m3", ln=1, align="R")
             
-            # --- LÓGICA DE EXTRACCIÓN Y REDACCIÓN DEL TEXTO DE SONDEOS ---
             pisos_activos = []
             for _, row in df_d_mol_val.iterrows():
                 b_val = clean_number(row.get("Bandejas", 0))
@@ -1033,7 +1048,7 @@ elif st.session_state.app_mode == "MOLINOS":
             texto_mediciones = (
                 f"Para las mediciones de gas Fosfina durante toda la fumigación se colocaron sondas de muestreo de gas en los siguientes pisos del "
                 f"molino: {pisos_str}. Las sondas de muestreo son micro tubos de riego de polietileno de color negro y de un diámetro de 4 mm. "
-                f"La disposición final de estas sondas en cada piso, fue determinada por control de calidad.\n\n" # CAMBIO 2: Determinada por control de calidad
+                f"La disposición final de estas sondas en cada piso, fue determinada por control de calidad.\n\n"
                 "Se acordó con el Molino, la siguiente frecuencia de medición:\n"
                 "- Medición cada 2 horas, desde la inyección del molino hasta alcanzar las 200 ppm.\n"
                 "- Una vez alcanzadas las 300 ppm, las mediciones se realizaron a las 7:00, 13:00, 19:00 y 24:00 horas.\n\n"
@@ -1045,26 +1060,32 @@ elif st.session_state.app_mode == "MOLINOS":
             pdf.multi_cell(0, 5, texto_mediciones)
             pdf.ln(5)
 
-            # --- GENERACIÓN DEL GRÁFICO (CAMBIO 3: Gráfico más grande 10x6) ---
-            fig, ax = plt.subplots(figsize=(10, 6))
-            e_x = df_m_clean["Fecha"].astype(str) + "\n" + df_m_clean["Hora"].astype(str)
-            h_g = False
-            
-            for i in range(2, len(df_m_clean.columns)):
-                col_name = df_m_clean.columns[i]
-                val = pd.to_numeric(df_m_clean.iloc[:, i], errors='coerce').fillna(0)
-                if val.sum() > 0:
-                    ax.plot(e_x, val, marker='o', label=col_name)
-                    h_g = True
+            tmp_g_name = None
+            try:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                e_x = df_m_clean["Fecha"].astype(str) + "\n" + df_m_clean["Hora"].astype(str)
+                h_g = False
+                
+                for i in range(2, len(df_m_clean.columns)):
+                    col_name = df_m_clean.columns[i]
+                    val = pd.to_numeric(df_m_clean.iloc[:, i], errors='coerce').fillna(0)
+                    if val.sum() > 0:
+                        ax.plot(e_x, val, marker='o', label=col_name)
+                        h_g = True
+                        
+                ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
+                if h_g: ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False)
+                plt.tight_layout()
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_g:
+                    tmp_g_name = tmp_g.name
+                    fig.savefig(tmp_g_name, dpi=300)
                     
-            ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
-            if h_g: ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15), ncol=4, frameon=False)
-            plt.tight_layout()
+                pdf.image(tmp_g_name, x=10, w=190)
+            finally:
+                if tmp_g_name and os.path.exists(tmp_g_name):
+                    os.remove(tmp_g_name)
             
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_g:
-                fig.savefig(tmp_g.name, dpi=300); pdf.image(tmp_g.name, x=10, w=190)
-            
-            # SALTO DE PÁGINA INTELIGENTE: Si queda poco espacio para la tabla, saltar.
             if pdf.get_y() > 180:
                 pdf.add_page()
             else:
@@ -1124,6 +1145,7 @@ elif st.session_state.app_mode == "MOLINOS":
                 with open(t1.name, "rb") as f1: st.session_state.pdf_informe = f1.read()
                 with open(t2.name, "rb") as f2: st.session_state.pdf_cert = f2.read()
             
+        finally:
             if firma_path_guardada and firma_path_guardada != 'firma.png':
                 if os.path.exists(firma_path_guardada): os.remove(firma_path_guardada)
 
@@ -1280,23 +1302,33 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
 
             pdf.t_seccion("III", "TIEMPOS Y MEDICIONES", force=True)
             pdf.tabla(["Evento", "Fecha", "Hora", "Total Horas"], [["Inicio", str(f_ini_e), str(h_ini_e), f"{h_exp_e:.1f}"], ["Término", str(f_ter_e), str(h_ter_e), "---"]], [45, 45, 45, 55])
-            pdf.ln(5); fig, ax = plt.subplots(figsize=(10, 5))
-            e_x = df_m_pdf_filtered["Fecha"].astype(str) + "\n" + df_m_pdf_filtered["Hora"].astype(str)
-            h_g = False
             
-            for i in range(2, len(df_m_pdf_filtered.columns)):
-                col_name = df_m_pdf_filtered.columns[i]
-                val = pd.to_numeric(df_m_pdf_filtered.iloc[:, i], errors='coerce').fillna(0)
-                if val.sum() > 0: 
-                    ax.plot(e_x, val, marker='o', label=col_name)
-                    h_g = True
+            tmp_g_name_e = None
+            try:
+                fig, ax = plt.subplots(figsize=(10, 5))
+                e_x = df_m_pdf_filtered["Fecha"].astype(str) + "\n" + df_m_pdf_filtered["Hora"].astype(str)
+                h_g = False
+                
+                for i in range(2, len(df_m_pdf_filtered.columns)):
+                    col_name = df_m_pdf_filtered.columns[i]
+                    val = pd.to_numeric(df_m_pdf_filtered.iloc[:, i], errors='coerce').fillna(0)
+                    if val.sum() > 0: 
+                        ax.plot(e_x, val, marker='o', label=col_name)
+                        h_g = True
+                        
+                ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
+                if h_g: ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.2), ncol=5, frameon=False)
+                plt.tight_layout()
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_g:
+                    tmp_g_name_e = tmp_g.name
+                    fig.savefig(tmp_g_name_e, dpi=300)
                     
-            ax.axhline(300, color='red', linestyle='--', label='Mínimo Legal (300ppm)')
-            if h_g: ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.2), ncol=5, frameon=False)
-            plt.tight_layout()
-            
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_g:
-                fig.savefig(tmp_g.name, dpi=300); pdf.image(tmp_g.name, x=10, w=190)
+                pdf.image(tmp_g_name_e, x=10, w=190)
+            finally:
+                if tmp_g_name_e and os.path.exists(tmp_g_name_e):
+                    os.remove(tmp_g_name_e)
+                    
             pdf.ln(5)
             
             cols_list = list(df_m_pdf_filtered.columns)
@@ -1340,7 +1372,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
             p_limpio = p_sel[:30]+"..." if len(p_sel)>30 else p_sel
             cert.t_cert(["Área Tratada", "Volumen (m3)", "Fecha y Hora Fumigación / Ventilación"], [[p_limpio, f"{t_v:.1f} m3", f"Inicio: {f_ini_e.strftime('%d-%m-%Y')} - {h_ini_e} Hrs\nTérmino: {f_ter_e.strftime('%d-%m-%Y')} - {h_ter_e} Hrs"]], [50, 30, 110])
             cert.t_cert(["Tiempo Exp.", "Fumigante Usado", "Lugar Fumigación"], [[f"{h_exp_e:.0f} Horas", ingrediente, direccion_e]], [30, 60, 100])
-            cert.t_cert(["Dosis (g/m3)", "Concentración Promedio", "Informe Ref."], [[f"{dosis_promedio:.2f}", f"{ppm_e:.0f} PPM", inf_ref_est]], [50, 70, 70])
+            cert.t_cert(["Dosis (g/m3)", "Concentración Promedio", "Informe Ref."], [[f"{dosis_promedio:.2f}", f"{promedio_ppm:.0f} PPM", inf_ref_est]], [50, 70, 70])
             
             cert.ln(10); cert.set_font("Arial", "", 10)
             cert.multi_cell(0, 6, f"Se extiende el presente certificado N° {num_cert}, con fecha {format_fecha_es(fecha_e)}, al interesado para los efectos que estime conveniente.")
@@ -1354,6 +1386,7 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 with open(t1.name, "rb") as f1: st.session_state.pdf_informe = f1.read()
                 with open(t2.name, "rb") as f2: st.session_state.pdf_cert = f2.read()
                 
+        finally:
             if firma_path_guardada and firma_path_guardada != 'firma.png':
                 if os.path.exists(firma_path_guardada): os.remove(firma_path_guardada)
                 
@@ -1418,26 +1451,30 @@ elif st.session_state.app_mode == "TRABAJO":
                 for i, f in enumerate(fotos_dialogo):
                     tmp_p, w, h = procesar_imagen_full(f)
                     if tmp_p:
-                        ratio = w / h
-                        if i == 0:
-                            avail_h = 260 - pdf.get_y()
-                            max_w_cover = 150 
-                            if (max_w_cover / ratio) <= avail_h:
-                                final_w = max_w_cover; final_h = max_w_cover / ratio
+                        try:
+                            ratio = w / h
+                            if i == 0:
+                                avail_h = 260 - pdf.get_y()
+                                max_w_cover = 150 
+                                if (max_w_cover / ratio) <= avail_h:
+                                    final_w = max_w_cover; final_h = max_w_cover / ratio
+                                else:
+                                    final_h = avail_h; final_w = avail_h * ratio
+                                pdf_x = 10 + (190 - final_w) / 2
+                                pdf.image(tmp_p, x=pdf_x, y=pdf.get_y(), w=final_w, h=final_h)
                             else:
-                                final_h = avail_h; final_w = avail_h * ratio
-                            pdf_x = 10 + (190 - final_w) / 2
-                            pdf.image(tmp_p, x=pdf_x, y=pdf.get_y(), w=final_w, h=final_h)
-                        else:
-                            pdf.add_page()
-                            if (190 / ratio) <= 240:
-                                final_w = 190; final_h = 190 / ratio
-                            else:
-                                final_h = 240; final_w = 240 * ratio
-                            pdf_x = 10 + (190 - final_w) / 2
-                            pdf_y = 35 + (240 - final_h) / 2
-                            pdf.image(tmp_p, x=pdf_x, y=pdf_y, w=final_w, h=final_h)
-                        os.remove(tmp_p)
+                                pdf.add_page()
+                                if (190 / ratio) <= 240:
+                                    final_w = 190; final_h = 190 / ratio
+                                else:
+                                    final_h = 240; final_w = 240 * ratio
+                                pdf_x = 10 + (190 - final_w) / 2
+                                pdf_y = 35 + (240 - final_h) / 2
+                                pdf.image(tmp_p, x=pdf_x, y=pdf_y, w=final_w, h=final_h)
+                        finally:
+                            if os.path.exists(tmp_p):
+                                os.remove(tmp_p)
+                                
                     my_bar.progress((i + 1) / len(fotos_dialogo), text=f"Procesando imagen {i+1} de {len(fotos_dialogo)}")
                 
                 my_bar.empty()
