@@ -736,13 +736,14 @@ elif st.session_state.app_mode == "AVISO":
                         except Exception as pdf_error:
                             st.error(f"❌ Falló la conversión a PDF. Asegúrate de haber subido el archivo 'packages.txt' con la palabra 'libreoffice' a tu GitHub. Detalles técnicos: {pdf_error}")
 
-                    if mapa_final_usar and os.path.exists(mapa_final_usar): os.remove(mapa_final_usar)
-                    if firma_path and os.path.exists(firma_path): os.remove(firma_path)
-                    
                     st.rerun()
+
                 except Exception as e:
                     st.error(f"Error generando el documento: {e}")
                     st.code(traceback.format_exc())
+                finally:
+                    if mapa_final_usar and os.path.exists(mapa_final_usar): os.remove(mapa_final_usar)
+                    if firma_path and os.path.exists(firma_path): os.remove(firma_path)
 
     if st.session_state.get("pdf_aviso") is not None:
         st.success("✅ Documento de Aviso en PDF generado exitosamente.")
@@ -1014,7 +1015,7 @@ elif st.session_state.app_mode == "MOLINOS":
             
             pdf.t_seccion("I", "PLAN DE SELLADO Y LIMPIEZA")
             pdf.set_font("Arial", "", 10)
-            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l_mol} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev_mol} a las {hora_rev_mol} hours.")
+            pdf.multi_cell(0, 5, "Previo a la inyección del fumigante, se verificaron y ejecutaron las condiciones de saneamiento crítico en las estructuras a tratar. Las labores se centraron en la remoción mecánica de biomasa, costras de producto envejecido y acumulaciones de polvo en zonas de difícil acceso (interiores de roscas, cúpulas de silos y ductos).\n\nEsta gestión de limpieza elimina refugios físicos que podrían disminuir la penetración del gas, garantizando así la hermeticidad y la máxima eficacia del tratamiento según los protocolos de calidad de Rentokil Initial.\n\n" + f"Supervisión Cliente: {enc_l_mol} | Visado Rentokil: {rep_r}.\n" + f"Fecha Revisión en Terreno: {fecha_rev_mol} a las {hora_rev_mol} horas.")
             pdf.ln(3)
             
             if hay_obs_mol and txt_obs_mol:
@@ -1145,12 +1146,14 @@ elif st.session_state.app_mode == "MOLINOS":
                 with open(t1.name, "rb") as f1: st.session_state.pdf_informe = f1.read()
                 with open(t2.name, "rb") as f2: st.session_state.pdf_cert = f2.read()
             
+            st.rerun()
+            
+        except Exception as e: 
+            st.error(f"Error al generar documentos: {e}")
+            st.code(traceback.format_exc())
         finally:
             if firma_path_guardada and firma_path_guardada != 'firma.png':
                 if os.path.exists(firma_path_guardada): os.remove(firma_path_guardada)
-
-            st.rerun()
-        except Exception as e: st.error(f"Error al generar documentos: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
 # LÓGICA: ESTRUCTURAS (10 PUNTOS)
@@ -1386,12 +1389,14 @@ elif st.session_state.app_mode == "ESTRUCTURAS":
                 with open(t1.name, "rb") as f1: st.session_state.pdf_informe = f1.read()
                 with open(t2.name, "rb") as f2: st.session_state.pdf_cert = f2.read()
                 
+            st.rerun()
+
+        except Exception as e: 
+            st.error(f"Error al generar documentos: {e}")
+            st.code(traceback.format_exc())
         finally:
             if firma_path_guardada and firma_path_guardada != 'firma.png':
                 if os.path.exists(firma_path_guardada): os.remove(firma_path_guardada)
-                
-            st.rerun()
-        except Exception as e: st.error(f"Error al generar documentos: {e}"); st.code(traceback.format_exc())
 
 # ==============================================================================
 # LÓGICA: INFORME DE TRABAJO
